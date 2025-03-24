@@ -1,0 +1,2 @@
+# @package policy
+_target_: maze_flatland.agents.greedy_policy.GreedyPolicy

@@ -1,0 +1,19 @@
+# @package _global_
+
+# defaults to override
+defaults:
+  - override /runner: parallel
+  - override /env: decision_point_mask/single_train/flatland_reduced_action_space
+  - override /policy: flatland_greedy_policy
+  - override /model: ~
+
+seeding:
+  # Base seed for creating env seeds
+  env_base_seed: 1234
+  # Base seed for creating agent seeds
+  agent_base_seed: 1234
+
+
+runner:
+  n_episodes: 1
+  n_processes: 1

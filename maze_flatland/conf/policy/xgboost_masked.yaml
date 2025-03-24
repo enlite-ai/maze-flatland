@@ -1,0 +1,3 @@
+# @package policy
+_target_: maze_flatland.agents.xgboost_policy.XGBoostPolicy
+use_masking: true

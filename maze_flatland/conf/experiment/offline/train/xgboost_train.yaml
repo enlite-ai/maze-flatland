@@ -1,0 +1,29 @@
+# @package _global_
+
+defaults:
+  - override /algorithm: xgboost
+  - override /model: masked_flatland
+  - override /env: decision_point_mask/multi_train/ma_reduced_action_space
+  - override /runner: local
+  - override /wrappers: [sub_step_skipping_monitored]
+
+seeding:
+  env_base_seed: 1234
+  agent_base_seed: 1234
+
+runner:
+  dataset:
+    _target_: maze.core.trajectory_recording.datasets.in_memory_dataset.FlattenInMemoryDataset
+    input_data: ${trajectories_data}
+    n_workers: 1
+    deserialize_in_main_thread: false
+    trajectory_processor:
+      _target_: maze_flatland.maze_extensions.trajectory_preprocessor.FilterOnlyArrivedTrains
+
+env:
+  _:
+    n_trains: 3
+
+
+trajectories_data: ~
+log_base_dir: flatland_result/XGBoost-v2.2/

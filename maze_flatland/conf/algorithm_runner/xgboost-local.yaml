@@ -1,0 +1,2 @@
+# @package runner
+_target_: maze_flatland.runners.xgb_runner.XGBoostRunner

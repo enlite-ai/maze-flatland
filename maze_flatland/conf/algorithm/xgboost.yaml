@@ -1,0 +1,9 @@
+validation_percentage: 10
+n_estimators: 200
+max_depth: 50
+learning_rate: 0.05
+objective: 'multi:softprob'
+n_processes: -1
+reg_alpha: 0.01
+gamma: ~
+reg_lambda: ~

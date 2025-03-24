@@ -1,0 +1,64 @@
+# @package _global_
+
+env:
+  _target_: "maze_flatland.env.maze_env.FlatlandEnvironment"
+
+  # General parameters of the environment
+  # (reused across different components using Hydra interpolation)
+
+  _:
+    n_trains: 20
+    map_height: 37
+    map_width: 37
+    n_cities: 2
+    malfunction_rate: 0
+    malfunction_duration_min: 1
+    malfunction_duration_max: 2
+    speed_ratio_map:
+      1: 1
+      0.5: 0
+      0.33: 0
+      0.25: 0
+    max_rails_between_cities: 3
+    max_rail_pairs_in_city: 3
+
+
+  core_env:
+    _target_: maze_flatland.env.core_env.FlatlandCoreEnvironment
+    map_width: ${env._.map_width}
+    map_height: ${env._.map_height}
+    n_trains: ${env._.n_trains}
+    termination_conditions:
+      - _target_: maze_flatland.env.termination_condition.IncludeOutOfTimeTrainsInEarlyTermination
+    reward_aggregator:
+      _target_: maze_flatland.reward.constant_reward.ConstantMinusOneReward
+    malfunction_generator:
+      _target_: flatland.envs.malfunction_generators.ParamMalfunctionGen
+      parameters:
+        malfunction_rate: ${env._.malfunction_rate}
+        min_duration: ${env._.malfunction_duration_min}
+        max_duration: ${env._.malfunction_duration_max}
+    line_generator:
+      _target_: flatland.envs.line_generators.SparseLineGen
+      speed_ratio_map: ${env._.speed_ratio_map}
+    rail_generator:
+      _target_: flatland.envs.rail_generators.SparseRailGen
+      max_num_cities: ${env._.n_cities}
+      grid_mode: False
+      max_rails_between_cities: ${env._.max_rails_between_cities}
+      max_rail_pairs_in_city: ${env._.max_rail_pairs_in_city}
+    renderer:
+      _target_: maze_flatland.env.renderer.FlatlandRendererBase
+      img_width: 1500
+      agent_render_variant: flatland.utils.rendertools.AgentRenderVariant.AgentRenderVariant.ONE_STEP_BEHIND
+      render_out_of_map_trains: True
+      highlight_current_train: False
+
+  action_conversion:
+    train_move:
+      _target_: maze_flatland.space_interfaces.action_conversion.directional.DirectionalAC
+
+  observation_conversion:
+    train_move:
+      _target_: maze_flatland.space_interfaces.observation_conversion.graph_based_directional.GraphDirectionalObservationConversion
+      serialize_representation: true

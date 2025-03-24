@@ -1,0 +1,2 @@
+maze_flatland.wrappers.observation_aggregator_wrapper.ObservationAggregatorFlattening:
+  exclude_mask_from_aggregation: true

@@ -1,0 +1,2 @@
+maze.core.wrappers.reward_scaling_wrapper.RewardScalingWrapper:
+  scale: 1

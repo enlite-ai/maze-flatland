@@ -1,0 +1,43 @@
+# @package _global_
+
+# defaults to override
+defaults:
+  - override /runner: parallel
+  - override /env: decision_point_mask/multi_train/ma_reduced_action_space
+  - override /policy: torch_policy
+  - override /model: masked_flatland
+  - override /wrappers: [sub_step_skipping_monitored]
+seeding:
+  # Base seed for creating env seeds
+  env_base_seed: 9999
+  # Base seed for creating agent seeds
+  agent_base_seed: 9999
+
+runner:
+  n_episodes: 100
+  deterministic: true
+  n_processes: 20
+
+train_params:
+  optim: torch.optim.Adam
+  non_lin: torch.nn.Tanh
+  hidden_units: [512, 256]
+
+model:
+  policy:
+    _target_: maze.perception.models.policies.ProbabilisticPolicyComposer
+    substeps_with_separate_agent_nets: []
+    networks:
+      train_move:
+        _target_: 'maze.perception.models.built_in.flatten_concat_masked.FlattenConcatMaskedPolicyNet'
+        non_lin: ${train_params.non_lin}
+        hidden_units: ${train_params.hidden_units}
+        remove_mask_from_obs: true
+
+  critic: ~
+
+env:
+  _:
+    n_trains: 3
+
+input_dir: ~

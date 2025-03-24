@@ -1,0 +1,69 @@
+# @package _global_
+
+env:
+  _target_: "maze_flatland.env.maze_env.FlatlandEnvironment"
+
+  # General parameters of the environment
+  # (reused across different components using Hydra interpolation)
+
+  _:
+    n_trains: 4
+    map_height: 30
+    map_width: 30
+    n_cities: 3
+    malfunction_rate: 0.1
+    max_duration: 2
+    lowest_speed: &lowest_speed 0.5
+    highest_speed: &highest_speed 1
+    speed_ratio_map:
+      *highest_speed: 0.7
+      *lowest_speed: 0.3
+
+  core_env:
+    _target_: maze_flatland.env.core_env.FlatlandCoreEnvironment
+    map_width: ${env._.map_width}
+    map_height: ${env._.map_height}
+    n_trains: ${env._.n_trains}
+    termination_conditions:
+      _target_: maze_flatland.env.termination_condition.IncludeOutOfTimeTrainsInEarlyTermination
+    reward_aggregator:
+      _target_: maze_flatland.reward.default_flatland_v2.RewardAggregator
+      alpha: 1
+      beta: 1
+      reward_for_goal_reached: 10
+      penalty_for_start: 0
+      penalty_for_stop: 0
+      use_train_speed: True
+      penalty_for_block: 5
+      penalty_for_deadlock: 500
+      distance_penalty_weight: 0.01
+    malfunction_generator:
+      _target_: flatland.envs.malfunction_generators.ParamMalfunctionGen
+      parameters:
+        malfunction_rate: ${env._.malfunction_rate}
+        min_duration: 1
+        max_duration: 2
+    line_generator:
+      _target_: flatland.envs.line_generators.SparseLineGen
+      speed_ratio_map: ${env._.speed_ratio_map}
+    rail_generator:
+      _target_: flatland.envs.rail_generators.SparseRailGen
+      max_num_cities: ${env._.n_cities}
+      grid_mode: False
+      max_rails_between_cities: 3
+      max_rail_pairs_in_city: 3
+    renderer:
+      _target_: maze_flatland.env.renderer.FlatlandRendererBase
+      img_width: 1500
+      agent_render_variant: flatland.utils.rendertools.AgentRenderVariant.AgentRenderVariant.BOX_ONLY
+      render_out_of_map_trains: True
+      highlight_current_train: False
+
+  action_conversion:
+    train_move:
+      _target_: maze_flatland.space_interfaces.action_conversion.directional.DirectionalAC
+
+  observation_conversion:
+    train_move:
+      _target_: maze_flatland.space_interfaces.observation_conversion.minimal.MinimalObservationConversion
+      serialize_representation: true
