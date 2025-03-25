@@ -1,0 +1,19 @@
+# @package _global_
+
+# defaults to override
+defaults:
+  - override /runner: validation_round_1
+  - override /env: decision_point_mask/multi_train/ma_reduced_action_space
+  - override /policy: xgboost_masked
+  - override /wrappers: [sub_step_skipping_monitored]
+  - override /model: ~
+
+env:
+  _:
+    n_trains: ~
+
+seeding:
+  env_base_seed: 12345
+  agent_base_seed: 12345
+
+input_dir: ~

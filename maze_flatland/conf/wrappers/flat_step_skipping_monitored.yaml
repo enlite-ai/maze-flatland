@@ -1,0 +1,14 @@
+maze.core.wrappers.monitoring_wrapper.MazeEnvMonitoringWrapper:
+  observation_logging: false
+  action_logging: false
+  reward_logging: true
+
+maze_flatland.wrappers.masking_wrapper.FlatlandMaskingWrapper:
+  mask_builder:
+    _target_: maze_flatland.env.masking.mask_builder.LogicMaskBuilder
+    mask_out_dead_ends: true
+    disable_stop_on_switches: false
+  explain_mask: false
+
+maze_flatland.wrappers.skipping_wrapper.FlatStepSkippingWrapper:
+  do_skipping_in_reset: false

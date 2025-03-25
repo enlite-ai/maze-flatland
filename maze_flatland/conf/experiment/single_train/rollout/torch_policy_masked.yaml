@@ -1,0 +1,27 @@
+# @package _global_
+
+# defaults to override
+defaults:
+  - override /runner: parallel
+  - override /env: decision_point_mask/single_train/flatland_reduced_action_space
+  - override /policy: torch_policy
+  - override /model: masked_flatland
+
+seeding:
+  # Base seed for creating env seeds
+  env_base_seed: 9999
+  # Base seed for creating agent seeds
+  agent_base_seed: 9999
+
+runner:
+  n_episodes: 50
+  deterministic: true
+
+env:
+  observation_conversion:
+    train_move:
+      _target_: maze_flatland.space_interfaces.observation_conversion.graph.ObservationConversion
+      check_for_dead_ends: 0
+      use_mask: true
+      serialize_representation: true
+      n_actions: 5

@@ -1,0 +1,41 @@
+# @package _global_
+
+defaults:
+  - override /algorithm: ppo
+  - override /model: masked_flatland
+  - override /env: decision_point_mask/single_train/flatland_reduced_action_space
+  - override /runner: dev
+
+
+runner:
+  dump_interval: 10
+  concurrency: 1
+  eval_concurrency: 4
+
+
+algorithm:
+  n_epochs: 500
+  device: 'cpu'
+  epoch_length: 1
+  n_rollout_steps: 2560
+  n_optimization_epochs: 10
+  patience: 1000000
+  batch_size: 128
+  entropy_coef: 0
+  value_loss_coef: 5e-4
+  policy_loss_coef: 1
+  lr: ${model_params.lr}
+  gamma: ${model_params.gamma}
+  rollout_evaluator:
+    n_episodes: 10
+
+seeding:
+#  # Base seed for creating env seeds
+  env_base_seed: ${model_params.seed}
+# Base seed for creating agent seeds
+  agent_base_seed: ${model_params.seed}
+
+model_params:
+  lr:  1e-4
+  gamma: 0.999
+  seed: 1234

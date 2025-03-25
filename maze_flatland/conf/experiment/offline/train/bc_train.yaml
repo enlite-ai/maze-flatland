@@ -1,0 +1,74 @@
+# @package _global_
+
+defaults:
+  - override /algorithm: bc
+  - override /model: masked_flatland
+  - override /env: decision_point_mask/multi_train/ma_reduced_action_space
+  - override /runner: local
+  - override /wrappers: [sub_step_skipping_monitored]
+
+seeding:
+  env_base_seed: 1234
+  agent_base_seed: 1234
+
+runner:
+  dataset:
+    _target_: maze.core.trajectory_recording.datasets.in_memory_dataset.FlattenInMemoryDataset
+    input_data: ${trajectories_data}
+    n_workers: 1
+    deserialize_in_main_thread: false
+    trajectory_processor:
+      _target_: maze_flatland.maze_extensions.trajectory_preprocessor.FilterOnlyArrivedTrains
+  dump_interval: 20
+  eval_concurrency: 0
+
+
+algorithm:
+  n_epochs: 200
+  batch_size: 325
+
+  optimizer:
+    _target_: ${train_params.optim}
+    lr: ${train_params.lr}
+  device: cpu
+
+  validation_percentage: 5
+  n_eval_episodes: 0
+  eval_frequency: 50
+  eval_start_epoch: 20
+  eval_every_k_iterations: ~
+  dump_events_to_file: false
+
+
+  loss:
+    _target_: maze_flatland.maze_extensions.bc_losses.ClippedBCLoss
+    min_clip: -10000
+    max_clip: +10000
+
+model:
+  policy:
+    _target_: maze.perception.models.policies.ProbabilisticPolicyComposer
+    substeps_with_separate_agent_nets: []
+    networks:
+      train_move:
+        _target_: 'maze.perception.models.built_in.flatten_concat_masked.FlattenConcatMaskedPolicyNet'
+        non_lin: ${train_params.non_lin}
+        hidden_units: ${train_params.hidden_units}
+        remove_mask_from_obs: true
+
+  critic: ~
+
+train_params:
+  optim: torch.optim.Adam
+  non_lin: torch.nn.Tanh
+  hidden_units: [512, 256]
+  lr: 0.00042535
+
+
+env:
+  _:
+    n_trains: 3
+
+trajectories_data: ~
+
+log_base_dir: flatland_result/BC_offline-v2.2/

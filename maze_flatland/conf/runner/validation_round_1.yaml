@@ -1,0 +1,14 @@
+
+# @package runner
+_target_: maze_flatland.evaluation.validation_rollout_runner.ValidationRolloutRunner
+
+test_levels: [0,1,2,3,4]
+
+time_limit: 3600 # 8 hours
+
+round_level: 1
+
+record_event_logs: true
+
+# Deterministic or stochastic action sampling
+deterministic: true

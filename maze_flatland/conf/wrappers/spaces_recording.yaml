@@ -1,0 +1,2 @@
+maze.core.wrappers.spaces_recording_wrapper.SpacesRecordingWrapper:
+  output_dir: space_records

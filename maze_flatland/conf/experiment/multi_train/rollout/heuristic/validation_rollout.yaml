@@ -1,0 +1,15 @@
+# @package _global_
+
+# defaults to override
+defaults:
+  - override /runner: validation_round_1
+  - override /env: decision_point_mask/multi_train/ma_reduced_action_space
+  - override /policy: flatland_greedy_policy
+  - override /model: ~
+
+
+seeding:
+  # Base seed for creating env seeds
+  env_base_seed: 1234
+  # Base seed for creating agent seeds
+  agent_base_seed: 1234
