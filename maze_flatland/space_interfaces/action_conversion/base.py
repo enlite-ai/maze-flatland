@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-import gym
+import gymnasium as gym
 import numpy as np
 from maze.core.annotations import override
 from maze.core.env.action_conversion import ActionConversionInterface

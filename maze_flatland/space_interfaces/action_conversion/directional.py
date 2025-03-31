@@ -4,7 +4,7 @@ ActionConversion for multi-agent Flatland environment.
 
 from __future__ import annotations
 
-import gym
+import gymnasium as gym
 import numpy as np
 from flatland.envs.step_utils.states import TrainState
 from maze.core.annotations import override

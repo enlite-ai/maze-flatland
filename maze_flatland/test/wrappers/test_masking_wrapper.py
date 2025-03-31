@@ -113,15 +113,22 @@ def test_dead_end_case():
         max_rails_between_cities=3,
         max_rail_pairs_in_city=3,
     )
-    env.seed(1567173351)
+    env.seed(2812)
     rng = np.random.RandomState(1235)
     obs = env.reset()
-
-    done = False
-    while not done:
+    dead_end_action = FlatlandMazeAction.GO_FORWARD
+    train_state = env.get_maze_state().trains[0]
+    while train_state.env_time <= 14:
+        # check that the dead end is found.
+        if train_state.env_time == 13:
+            assert (
+                train_state.actions_state[dead_end_action].target_cell is not None
+            ), 'Expected a valid cell instead of None.'
+            assert np.isinf(train_state.actions_state[dead_end_action].goal_distance), 'Expected a dead end path.'
+            assert not obs['train_move_mask'][dead_end_action], ' Action is not masked out.'
         action = rng.choice(np.where(obs['train_move_mask'])[0])
-        obs, rew, done, info = env.step({'train_move': action})
-    assert env.get_maze_state().trains[0].is_done()
+        obs, _, _, info = env.step({'train_move': action})
+        train_state = env.get_maze_state().trains[0]
 
 
 def test_mask_when_deadlock():
@@ -138,24 +145,22 @@ def test_mask_when_deadlock():
     )
     env.seed(197251382)
     _ = env.reset()
-    action_agent_0 = {16: 4, 17: 3, 18: 1, 20: 1}
 
-    state: FlatlandMazeState = env.get_maze_state()
     done = False
     while not done:
         action = 2
-        if state.current_train_id == 0 and state.env_time in action_agent_0:
-            action = action_agent_0[state.env_time]
-
         obs, rew, done, info = env.step({'train_move': action})
         state: FlatlandMazeState = env.get_maze_state()
-        if state.env_time == 21:
+        if state.env_time == 33:
+            assert state.trains[0].deadlock
+            assert state.trains[0].actions_state[FlatlandMazeAction.GO_FORWARD].obstructed_by == 1
+            assert state.trains[1].actions_state[FlatlandMazeAction.GO_FORWARD].obstructed_by == 0
+            assert state.trains[1].deadlock
+            assert not state.trains[2].deadlock
             flat_step_masks = np.asarray(env.get_mask_for_flat_step())
-            # pylint: disable=protected-access
-            assert (np.sum(flat_step_masks, axis=1) == 1).all()
-            # check that no_op is set to 1 only for trains in a deadlock
-            assert sum(flat_step_masks.T[4]) == 2 and flat_step_masks.T[3][0] == 0
-            assert state.trains[0].deadlock and state.trains[1].deadlock
+            for tid in [0, 1]:
+                assert sum(flat_step_masks[tid]) == 1, f'More than 1 option possible for train {tid}'
+                assert flat_step_masks[tid][-1], f'"Stop action not enabled for train {tid}'
             break
 
 

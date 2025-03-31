@@ -37,6 +37,10 @@ a single option is available.
 
 ## Setup
 
+- Navigate into the `maze-flatland` directory
+```bash
+cd maze-flatland
+```
 - Create a conda environment from the `environment.yml`
 > **Note:** The default name for the environment is maze-flatland.
 ```bash

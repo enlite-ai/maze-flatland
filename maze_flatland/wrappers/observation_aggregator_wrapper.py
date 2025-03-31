@@ -4,7 +4,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Callable, Union
 
-import gym
+import gymnasium as gym
 import numpy as np
 from maze.core.annotations import override
 from maze.core.env.maze_env import MazeEnv
@@ -150,8 +150,8 @@ class ObservationAggregatorWithPaddingWrapper(ObservationWrapper[MazeEnv]):
 
             for key, obs_value in processed_dummy_obs.items():
                 if self.exclude_mask_from_aggregation and key == mask_id:
-                    low = False
-                    high = True
+                    low = 0
+                    high = 1
                 else:
                     low = np.min(boundaries)
                     high = np.max(boundaries)
@@ -256,8 +256,8 @@ class ObservationAggregatorFlattening(ObservationWrapper[MazeEnv]):
 
             for key, obs_value in processed_dummy_obs.items():
                 if self.exclude_mask_from_aggregation and key == mask_id:
-                    low = False
-                    high = True
+                    low = 0
+                    high = 1
                 else:
                     low = np.min(boundaries)
                     high = np.max(boundaries)

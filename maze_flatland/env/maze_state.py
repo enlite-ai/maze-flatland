@@ -329,10 +329,15 @@ class MazeTrainState:
     @property
     def is_block(self) -> bool:
         """Check if a train is blocked or not.
+            A train is blocked if the connected cells are taken by another train.
+
         :return: True if is blocked, false otherwise
         """
+
         return (self.is_on_map() or self.status == TrainState.READY_TO_DEPART) and all(
-            action_state.obstructed for action_state in self.actions_state.values() if action_state.is_safe()
+            action_state.obstructed
+            for action_state in self.actions_state.values()
+            if action_state.target_cell is not None
         )
 
     def get_action_for_direction(self, global_direction: int) -> FlatlandMazeAction:
@@ -478,3 +483,17 @@ class FlatlandMazeState:
         if all(np.logical_or(done_trains, trains_unsolvable)):
             return True
         return False
+
+    def current_train(self) -> MazeTrainState:
+        """Get the current train state.
+
+        :return: The current maze train state.
+        """
+        return self.trains[self.current_train_id]
+
+    def current_mask(self) -> np.ndarray:
+        """Get the maks for the current state.
+
+        :return: The current mask.
+        """
+        return self.action_masks[self.current_train_id]

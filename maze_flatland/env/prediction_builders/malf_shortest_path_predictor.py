@@ -7,12 +7,17 @@ from typing import Optional
 import flatland
 import numpy as np
 from flatland.core.env_prediction_builder import PredictionBuilder
-from flatland.envs.agent_utils import TrainState
+from flatland.envs.agent_utils import EnvAgent, TrainState
 from flatland.envs.distance_map import DistanceMap
 from flatland.envs.rail_env import RailEnvActions
 from flatland.envs.rail_env_shortest_paths import get_valid_move_actions_
 from flatland.envs.rail_trainrun_data_structures import Waypoint
 from maze.core.annotations import override
+from numpy.typing import NDArray
+
+# Custom type for a predicted trajectory
+# 5-element tuple with: <time, pos_x, pos_y, status>
+predictedTrajectory = NDArray[NDArray[np.float64 | None]]
 
 
 def _get_agent_position(agent: flatland.envs.rail_env.EnvAgent) -> tuple[int, int]:
@@ -30,6 +35,211 @@ def _get_agent_position(agent: flatland.envs.rail_env.EnvAgent) -> tuple[int, in
         pos = agent.target
 
     return pos
+
+
+def prediction_adjusted_off_map_delay(
+    agents: list[EnvAgent],
+    shortest_paths: dict[int, list[Waypoint]],
+    env_time: int,
+    max_depth: int,
+) -> dict[int, predictedTrajectory]:
+    """Extends the cell-based shortest path prediction to account for delay given by:
+        - out of map trains, those that are not ready to depart yet;
+        - malfunctions, those that are malfunctioning in a certain cell;
+        - fractional speeds, it considers the speed of trains.
+
+    :param agents: list of EnvAgent objects
+    :param shortest_paths: Dictionary holding the cell-based shortest path for each agent.
+    :param env_time: current time
+    :param max_depth: maximum depth of the shortest path.
+    :return: Shortest path prediction for each agent considering the delays.
+    """
+    prediction_dict = {}
+    for agent in agents:
+        waiting_time = agent.earliest_departure - env_time
+        malfunction_counter = agent.malfunction_handler.malfunction_down_counter
+
+        agent_virtual_position = _get_agent_position(agent)
+        agent_virtual_direction = agent.direction
+        agent_speed = agent.speed_counter.speed
+        times_per_cell = int(np.reciprocal(agent_speed))
+        prediction = np.zeros(shape=(max_depth + 1, 5))
+        prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
+
+        shortest_path = shortest_paths[agent.handle]
+
+        # if there is the shortest path, remove the initial position
+        if shortest_path:
+            shortest_path = shortest_path[1:]
+
+        new_direction = agent_virtual_direction
+        new_position = agent_virtual_position
+
+        for index in range(1, max_depth + 1):
+            if new_position == agent.target and not shortest_path:
+                # if agent is arrived then just remove it from the map.
+                prediction[index] = [index, None, None, None, None]
+                continue
+            if not shortest_path:
+                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
+                continue
+
+            if malfunction_counter > 0:
+                malfunction_counter -= 1
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                # if train malfunction outside of map decrease waiting time as well...
+                if waiting_time > 0:
+                    waiting_time -= 1
+                continue
+
+            if waiting_time > 0:
+                waiting_time -= 1
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                continue
+
+            # if fractional speed then stay on the cell.
+            if index % times_per_cell == 0:
+                new_position = shortest_path[0].position
+                new_direction = shortest_path[0].direction
+                shortest_path = shortest_path[1:]
+
+            # prediction is ready
+            prediction[index] = [index, *new_position, new_direction, 0]
+
+        prediction_dict[agent.handle] = prediction
+    return prediction_dict
+
+
+def prediction_excluding_off_map_trains(
+    agents: list[any],
+    shortest_paths: dict[int, Optional[list[Waypoint]]],
+    max_depth: int,
+) -> predictedTrajectory:
+    """Refine the cell-based prediction by disregarding the off-map trains.
+    Note: ReadyToDepart trains are considered.
+
+    :param agents: list of EnvAgent objects
+    :param shortest_paths: Dictionary holding the cell-based shortest path for each agent.
+    :param max_depth: maximum depth of the shortest path.
+    :return: Shortest path prediction for each agent that is on the map.
+    """
+    prediction_dict = {}
+    for agent in agents:
+        # if the agent is not in an interesting state do not get the prediction
+        if agent.state in [TrainState.WAITING, TrainState.MALFUNCTION_OFF_MAP, TrainState.DONE]:
+            prediction = np.zeros(shape=(max_depth + 1, 5))
+            for i in range(max_depth + 1):
+                prediction[i] = [i, None, None, None, None]
+            prediction_dict[agent.handle] = prediction
+            continue
+        malfunction_counter = agent.malfunction_handler.malfunction_down_counter
+
+        agent_virtual_direction = agent.direction
+        agent_virtual_position = agent.position
+        if agent.state == TrainState.READY_TO_DEPART:
+            agent_virtual_position = agent.initial_position
+
+        agent_speed = agent.speed_counter.speed
+        times_per_cell = int(np.reciprocal(agent_speed))
+        prediction = np.zeros(shape=(max_depth + 1, 5))
+
+        prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
+
+        shortest_path = shortest_paths[agent.handle]
+
+        # if there is the shortest path, remove the initial position
+        if shortest_path:
+            shortest_path = shortest_path[1:]
+
+        new_direction = agent_virtual_direction
+        new_position = agent_virtual_position
+        for index in range(1, max_depth + 1):
+            if new_position == agent.target and not shortest_path:
+                # if agent is arrived then just remove it from the map.
+                prediction[index] = [index, None, None, None, None]
+                continue
+            if not shortest_path:
+                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
+                continue
+
+            if malfunction_counter > 0:
+                malfunction_counter -= 1
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                continue
+
+            # if fractional speed then stay on the cell.
+            if index % times_per_cell == 0:
+                new_position = shortest_path[0].position
+                new_direction = shortest_path[0].direction
+                shortest_path = shortest_path[1:]
+
+            # prediction is ready
+            prediction[index] = [index, *new_position, new_direction, 0]
+
+        prediction_dict[agent.handle] = prediction
+
+    return prediction_dict
+
+
+def prediction_vanilla(
+    agents: list[any],
+    shortest_paths: dict[int, Optional[list[Waypoint]]],
+    max_depth: int,
+) -> predictedTrajectory:
+    """Vanilla shortest path prediction. Does not consider any delay for malfunctions and assumes
+    train can move since index 0. Fractional speeds are considered.
+
+    :param agents: list of EnvAgent objects
+    :param shortest_paths: Dictionary holding the cell-based shortest path for each agent.
+    :param max_depth: maximum depth of the shortest path.
+    :return: Shortest path prediction for each agent that is on the map.
+    """
+    prediction_dict = {}
+
+    for agent in agents:
+        malfunction_counter = agent.malfunction_handler.malfunction_down_counter
+
+        agent_virtual_position = _get_agent_position(agent)
+        agent_virtual_direction = agent.direction
+        agent_speed = agent.speed_counter.speed
+        times_per_cell = int(np.reciprocal(agent_speed))
+        prediction = np.zeros(shape=(max_depth + 1, 5))
+        prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
+
+        shortest_path = shortest_paths[agent.handle]
+
+        # if there is the shortest path, remove the initial position
+        if shortest_path:
+            shortest_path = shortest_path[1:]
+
+        new_direction = agent_virtual_direction
+        new_position = agent_virtual_position
+
+        for index in range(1, max_depth + 1):
+            if new_position == agent.target and not shortest_path:
+                # if agent is arrived then just remove it from the map.
+                prediction[index] = [index, None, None, None, None]
+                continue
+            if not shortest_path:
+                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
+                continue
+
+            if malfunction_counter > 0:
+                malfunction_counter -= 1
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                continue
+
+            # if fractional speed then stay on the cell.
+            if index % times_per_cell == 0:
+                new_position = shortest_path[0].position
+                new_direction = shortest_path[0].direction
+                shortest_path = shortest_path[1:]
+
+            # prediction is ready
+            prediction[index] = [index, *new_position, new_direction, 0]
+
+        prediction_dict[agent.handle] = prediction
+    return prediction_dict
 
 
 def _shortest_path_for_agent(
@@ -171,7 +381,7 @@ class MalfShortestPathPredictorForRailEnv(PredictionBuilder):
         self.env.dev_pred_dict[agent_handle] = shortest_path
         return {agent_handle: shortest_path}
 
-    def get(self, handle: int = None) -> dict:
+    def get(self, handle: int = None) -> dict[int, predictedTrajectory]:
         """
         Called whenever get_many in the observation build is called.
         Requires the environment to be set through set_env().
@@ -196,219 +406,18 @@ class MalfShortestPathPredictorForRailEnv(PredictionBuilder):
         agents = self.env.agents if handle is None else [self.env.agents[handle]]
 
         shortest_paths = {}
-
+        env_time = self.env._elapsed_steps  # pylint: disable=protected-access
         for agent in agents:
             # cost linear to number of keys.
             shortest_paths.update(self.get_persistent_shortest_path(agent.handle))
 
-        malfunctions_counter = [agent.malfunction_handler.malfunction_down_counter for agent in agents]
         if self.exclude_off_map_trains and not self.consider_departure_delay:
-            prediction_dict = self.get_excluding_off_map_trains(agents, shortest_paths, malfunctions_counter)
+            prediction_dict = prediction_excluding_off_map_trains(agents, shortest_paths, self.max_depth)
         elif self.consider_departure_delay:
-            prediction_dict = self.get_with_departing_delay(agents, shortest_paths, malfunctions_counter)
+            prediction_dict = prediction_adjusted_off_map_delay(agents, shortest_paths, env_time, self.max_depth)
         else:
-            prediction_dict = self.get_vanilla(agents, shortest_paths, malfunctions_counter)
+            prediction_dict = prediction_vanilla(agents, shortest_paths, self.max_depth)
         return prediction_dict
-
-    def get_excluding_off_map_trains(
-        self, agents: list[any], shortest_paths: dict[int, Optional[list[Waypoint]]], malfunctions_counter: list[int]
-    ):
-        """Get predictions without predicting positions for off map trains.
-        :param agents: List of agents to get the predictions for.
-        :param shortest_paths: The shortest paths for each agent.
-        :param malfunctions_counter: The time for which each train is malfunctioning.
-        :return: Dictionary with the predicted position and direction over time.
-        """
-        prediction_dict = {}
-        for idx, agent in enumerate(agents):
-            # if the agent is not in an interesting state do not get the prediction
-
-            if agent.state in [TrainState.WAITING, TrainState.MALFUNCTION_OFF_MAP, TrainState.DONE]:
-                prediction = np.zeros(shape=(self.max_depth + 1, 5))
-                for i in range(self.max_depth + 1):
-                    prediction[i] = [i, None, None, None, None]
-                prediction_dict[agent.handle] = prediction
-                continue
-
-            agent_virtual_direction = agent.direction
-            agent_virtual_position = agent.position
-            if agent.state == TrainState.READY_TO_DEPART:
-                agent_virtual_position = agent.initial_position
-
-            agent_speed = agent.speed_counter.speed
-            times_per_cell = int(np.reciprocal(agent_speed))
-            prediction = np.zeros(shape=(self.max_depth + 1, 5))
-
-            prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
-
-            shortest_path = shortest_paths[agent.handle]
-
-            # if there is the shortest path, remove the initial position
-            if shortest_path:
-                shortest_path = shortest_path[1:]
-
-            new_direction = agent_virtual_direction
-            new_position = agent_virtual_position
-            for index in range(1, self.max_depth + 1):
-                if new_position == agent.target and not shortest_path:
-                    # if agent is arrived then just remove it from the map.
-                    prediction[index] = [index, None, None, None, None]
-                    continue
-                if not shortest_path:
-                    prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
-                    continue
-
-                if malfunctions_counter[idx] > 0:
-                    malfunctions_counter[idx] -= 1
-                    prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
-                    continue
-
-                # if fractional speed then stay on the cell.
-                if index % times_per_cell == 0:
-                    new_position = shortest_path[0].position
-                    new_direction = shortest_path[0].direction
-                    shortest_path = shortest_path[1:]
-
-                # prediction is ready
-                prediction[index] = [index, *new_position, new_direction, 0]
-
-            prediction_dict[agent.handle] = prediction
-
-        return prediction_dict
-
-    def get_vanilla(
-        self, agents: list[any], shortest_paths: dict[int, Optional[list[Waypoint]]], malfunctions_counter: list[int]
-    ):
-        """Get predictions without predicting positions for off map trains.
-        :param agents: List of agents to get the predictions for.
-        :param shortest_paths: The shortest paths for each agent.
-        :param malfunctions_counter: The time for which each train is malfunctioning.
-        :return: Dictionary with the predicted position and direction over time.
-        """
-        prediction_dict = {}
-
-        for idx, agent in enumerate(agents):
-            agent_virtual_position = self._get_agent_virtual_position(agent)
-            agent_virtual_direction = agent.direction
-            agent_speed = agent.speed_counter.speed
-            times_per_cell = int(np.reciprocal(agent_speed))
-            prediction = np.zeros(shape=(self.max_depth + 1, 5))
-            prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
-
-            shortest_path = shortest_paths[agent.handle]
-
-            # if there is the shortest path, remove the initial position
-            if shortest_path:
-                shortest_path = shortest_path[1:]
-
-            new_direction = agent_virtual_direction
-            new_position = agent_virtual_position
-
-            for index in range(1, self.max_depth + 1):
-                if new_position == agent.target and not shortest_path:
-                    # if agent is arrived then just remove it from the map.
-                    prediction[index] = [index, None, None, None, None]
-                    continue
-                if not shortest_path:
-                    prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
-                    continue
-
-                if malfunctions_counter[idx] > 0:
-                    malfunctions_counter[idx] -= 1
-                    prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
-                    continue
-
-                # if fractional speed then stay on the cell.
-                if index % times_per_cell == 0:
-                    new_position = shortest_path[0].position
-                    new_direction = shortest_path[0].direction
-                    shortest_path = shortest_path[1:]
-
-                # prediction is ready
-                prediction[index] = [index, *new_position, new_direction, 0]
-
-            prediction_dict[agent.handle] = prediction
-        return prediction_dict
-
-    # pylint: disable=too-many-statements
-    def get_with_departing_delay(
-        self, agents: list[any], shortest_paths: dict[int, Optional[list[Waypoint]]], malfunctions_counter: list[int]
-    ):
-        """Get predictions without predicting positions for off map trains.
-        :param agents: List of agents to get the predictions for.
-        :param shortest_paths: The shortest paths for each agent.
-        :param malfunctions_counter: The time for which each train is malfunctioning.
-        :return: Dictionary with the predicted position and direction over time.
-        """
-        prediction_dict = {}
-
-        env_time = self.env._elapsed_steps  # pylint: disable=protected-access
-        for idx, agent in enumerate(agents):
-            waiting_time = agent.earliest_departure - env_time
-
-            agent_virtual_position = self._get_agent_virtual_position(agent)
-            agent_virtual_direction = agent.direction
-            agent_speed = agent.speed_counter.speed
-            times_per_cell = int(np.reciprocal(agent_speed))
-            prediction = np.zeros(shape=(self.max_depth + 1, 5))
-            prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
-
-            shortest_path = shortest_paths[agent.handle]
-
-            # if there is the shortest path, remove the initial position
-            if shortest_path:
-                shortest_path = shortest_path[1:]
-
-            new_direction = agent_virtual_direction
-            new_position = agent_virtual_position
-
-            for index in range(1, self.max_depth + 1):
-                if new_position == agent.target and not shortest_path:
-                    # if agent is arrived then just remove it from the map.
-                    prediction[index] = [index, None, None, None, None]
-                    continue
-                if not shortest_path:
-                    prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
-                    continue
-
-                if malfunctions_counter[idx] > 0:
-                    malfunctions_counter[idx] -= 1
-                    prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
-                    # if train malfunction outside of map decrease waiting time as well...
-                    if waiting_time > 0:
-                        waiting_time -= 1
-                    continue
-
-                if waiting_time > 0:
-                    waiting_time -= 1
-                    prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
-                    continue
-
-                # if fractional speed then stay on the cell.
-                if index % times_per_cell == 0:
-                    new_position = shortest_path[0].position
-                    new_direction = shortest_path[0].direction
-                    shortest_path = shortest_path[1:]
-
-                # prediction is ready
-                prediction[index] = [index, *new_position, new_direction, 0]
-
-            prediction_dict[agent.handle] = prediction
-        return prediction_dict
-
-    @classmethod
-    def _get_agent_virtual_position(cls, agent) -> tuple[int, int]:
-        """Helper method to get the position of an agent based on its state.
-        :param agent: The agent to get the position for.
-        :return: Tuple with the current position of the agent."""
-        if agent.state.is_off_map_state():
-            agent_virtual_position = agent.initial_position
-        elif agent.state.is_on_map_state():
-            agent_virtual_position = agent.position
-        else:
-            assert agent.state == TrainState.DONE, f'state of agent is not recognised: {agent.state}'
-            agent_virtual_position = agent.target
-        return agent_virtual_position
 
     @override(flatland.core.env_prediction_builder.PredictionBuilder)
     def set_env(self, env: flatland.core.env.Environment) -> None:

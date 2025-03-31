@@ -6,6 +6,7 @@ import numpy as np
 from flatland.core.grid.grid4 import Grid4Transitions
 from flatland.core.grid.grid4_utils import get_new_position
 from flatland.core.grid.rail_env_grid import RailEnvTransitions
+from flatland.envs.agent_utils import EnvAgent
 from flatland.envs.observations import GlobalObsForRailEnv
 from flatland.envs.rail_env import RailEnv
 from flatland.utils.decorators import enable_infrastructure_lru_cache
@@ -140,3 +141,37 @@ def get_transitions_map(rail_env: RailEnv, use_cached: bool = True) -> np.ndarra
             bitlist = [0] * (16 - len(bitlist)) + bitlist
             rail_obs[i, j] = np.array(bitlist, dtype=bool)  # cast to bool as more efficient.
     return rail_obs
+
+
+def agent_to_str(agent: EnvAgent) -> str:
+    """Get a string of the given agent to print for debugging.
+
+    :param agent: The agent to get the string for
+    :return: A string representation of the agent.
+    """
+    txt = f'Handle: {agent.handle}'
+    txt += (
+        f'\n\tInitial Position: {agent.initial_position}, initial direction: {agent.initial_direction}, '
+        f'target: {agent.target}'
+    )
+    txt += f'\n\tCurrent Position: {agent.position}, current direction: {agent.direction}'
+    txt += '\n\tMalfunction'
+    txt += f'\n\t\tin_malfunction              : {agent.malfunction_handler.in_malfunction}'
+    txt += f'\n\t\tmalfunction_counter_complete: {agent.malfunction_handler.malfunction_counter_complete}'
+    txt += f'\n\t\tmalfunction_down_counter    : {agent.malfunction_handler.malfunction_down_counter}'
+    txt += f'\n\t\tnum_malfunctions            : {agent.malfunction_handler.num_malfunctions}'
+    txt += (
+        f'\n\tState Machine: {agent.state_machine.state.name}, '
+        f'previous state: {agent.state_machine.previous_state.name}, '
+        f'next state: {agent.state_machine.next_state.name}'
+    )
+    txt += '\n\tState Machine signals:'
+    txt += f'\n\t\tin_malfunction              : {agent.state_machine.st_signals.in_malfunction}'
+    txt += f'\n\t\tmalfunction_counter_complete: {agent.state_machine.st_signals.malfunction_counter_complete}'
+    txt += f'\n\t\tearliest_departure_reached  : {agent.state_machine.st_signals.earliest_departure_reached}'
+    txt += f'\n\t\tstop_action_given           : {agent.state_machine.st_signals.stop_action_given}'
+    txt += f'\n\t\tvalid_movement_action_given : {agent.state_machine.st_signals.valid_movement_action_given}'
+    txt += f'\n\t\tmovement_conflict           : {agent.state_machine.st_signals.movement_conflict}'
+    txt += f'\n\t\ttarget_reached              : {agent.state_machine.st_signals.target_reached}'
+    txt += f'\n\tActions Saved: {agent.action_saver}'
+    return txt
