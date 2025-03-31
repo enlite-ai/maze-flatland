@@ -11,7 +11,7 @@ import flatland.envs.agent_utils
 import flatland.envs.line_generators
 import flatland.envs.observations
 import flatland.envs.rail_env
-import gym
+import gymnasium as gym
 import numpy as np
 from flatland.envs.observations import GlobalObsForRailEnv
 from maze.core.annotations import override

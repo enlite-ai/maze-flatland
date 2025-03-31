@@ -25,7 +25,7 @@ def greedy_policy_example() -> None:
         done: bool = False
 
         while not done and step < max_n_steps:
-            action = policy.compute_action(obs, actor_id=env.actor_id(), maze_state=env.get_maze_state())
+            action = policy.compute_action(obs, actor_id=env.actor_id(), maze_state=env.get_maze_state(), env=None)
             obs, rewards, done, info = menv.step(action)
             total_reward += rewards.sum()
 

@@ -41,7 +41,7 @@ def run_env() -> tuple[FlatlandEnvironment, list[ObservationType]]:
     observations: list[ObservationType] = []
 
     while not done and step < max_n_steps:
-        action = policy.compute_action(obs, maze_state=env.get_maze_state(), actor_id=env.actor_id())
+        action = policy.compute_action(obs, maze_state=env.get_maze_state(), actor_id=env.actor_id(), env=None)
         obs, _, done, info = env.step(action)
         step += 1
         observations.append(obs)

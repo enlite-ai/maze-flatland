@@ -26,7 +26,7 @@ def test_env_reproducibility_with_greedy_policy():
     assert conduct_env_reproducibility_test(
         env,
         lambda observation, action_space: policy.compute_action(
-            observation, deterministic=True, maze_state=env.get_maze_state(), actor_id=env.actor_id()
+            observation, deterministic=True, maze_state=env.get_maze_state(), actor_id=env.actor_id(), env=None
         ),
         n_steps=20,
     ), 'Hash-keys do not match.'

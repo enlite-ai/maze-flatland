@@ -4,7 +4,7 @@ Tests greedy policy agent for FlatlandEnvironment.
 
 from __future__ import annotations
 
-import gym
+import gymnasium as gym
 import numpy as np
 from maze.core.annotations import override
 from maze.core.env.observation_conversion import ObservationConversionInterface, ObservationType
@@ -28,7 +28,7 @@ def test_greedy_policy_is_successful():
     max_n_steps = 305
     done: bool = False
     while not done and step < max_n_steps:
-        action = policy.compute_action(obs, maze_state=env.get_maze_state(), actor_id=env.actor_id())
+        action = policy.compute_action(obs, maze_state=env.get_maze_state(), actor_id=env.actor_id(), env=None)
         obs, rewards, done, info = env.step(action)
         step += 1
     assert step == 304
@@ -91,16 +91,16 @@ def test_greedy_policy_equivalency():
         maze_state = env.get_maze_state()
 
         # Compare recommended actions.
-        action_obs = policy_obs.compute_action(obs, maze_state=maze_state, actor_id=env.actor_id())
-        action_state = policy_state.compute_action(obs, maze_state=maze_state, actor_id=env.actor_id())
+        action_obs = policy_obs.compute_action(obs, maze_state=maze_state, actor_id=env.actor_id(), env=None)
+        action_state = policy_state.compute_action(obs, maze_state=maze_state, actor_id=env.actor_id(), env=None)
         assert action_obs == action_state
 
         # Compare recommended top action candidates.
         actions_obs, scores_obs = policy_obs.compute_top_action_candidates(
-            obs, num_candidates=3, maze_state=maze_state, actor_id=env.actor_id()
+            obs, num_candidates=3, maze_state=maze_state, actor_id=env.actor_id(), env=None
         )
         actions_state, scores_state = policy_state.compute_top_action_candidates(
-            obs, num_candidates=3, maze_state=maze_state, actor_id=env.actor_id()
+            obs, num_candidates=3, maze_state=maze_state, actor_id=env.actor_id(), env=None
         )
 
         assert actions_obs == actions_state

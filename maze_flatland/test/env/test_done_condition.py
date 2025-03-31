@@ -20,7 +20,7 @@ def test_successful():
     done: bool = False
     info = {}
     while not done and step < max_n_steps:
-        action = policy.compute_action(obs, maze_state=env.get_maze_state(), actor_id=env.actor_id())
+        action = policy.compute_action(obs, maze_state=env.get_maze_state(), actor_id=env.actor_id(), env=None)
         obs, rewards, done, info = env.step(action)
         step += 1
     assert step == 304

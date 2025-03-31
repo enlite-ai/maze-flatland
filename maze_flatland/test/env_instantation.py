@@ -68,7 +68,7 @@ def create_core_env(
         ),
         include_maze_state_in_serialization=include_maze_state_in_serialization,
         termination_conditions=BaseEarlyTermination(),
-        renderer=FlatlandRendererBase(1000, AgentRenderVariant.BOX_ONLY, False, False),
+        renderer=FlatlandRendererBase(1000, AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX, False, False),
     )
 
 

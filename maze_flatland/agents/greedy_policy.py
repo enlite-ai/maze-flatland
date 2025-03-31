@@ -44,8 +44,8 @@ class GreedyPolicy(Policy):
         self,
         observation: ObservationType,
         maze_state: Optional[FlatlandMazeState],
+        env: Optional[BaseEnv],
         actor_id: ActorID,
-        env: Optional[BaseEnv] = None,
         deterministic: bool = False,
     ) -> ActionType:
         """
@@ -83,8 +83,8 @@ class GreedyPolicy(Policy):
         observation: ObservationType,
         num_candidates: int,
         maze_state: Optional[FlatlandMazeState],
-        actor_id: ActorID,
-        env: Optional[BaseEnv] = None,
+        env: Optional[BaseEnv],
+        actor_id: ActorID = None,
         deterministic: bool = False,
     ) -> tuple[Sequence[ActionType], Sequence[float]]:
         """

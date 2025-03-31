@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Union
 
-import gym
+import gymnasium as gym
 import torch
 from maze.train.trainers.imitation.bc_loss import BCLoss
 from torch import Tensor

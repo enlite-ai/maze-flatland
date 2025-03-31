@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import gym
+import gymnasium as gym
 import numpy as np
 from maze.core.annotations import override
 from maze.core.env.maze_env import MazeEnv

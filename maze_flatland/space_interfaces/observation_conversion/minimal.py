@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-import gym
+import gymnasium as gym
 from maze.core.annotations import override
 from maze.core.env.observation_conversion import ObservationType
 from maze_flatland.env.maze_state import FlatlandMazeState

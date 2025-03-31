@@ -74,9 +74,9 @@ def test_flatland_env_reset():
 
 def test_flatland_impossible_episode():
     """Tests that a faulty episode is correctly identified at the reset time."""
-    env = create_core_env(3, 37, 37, 2, 0, {1.0: 1})
+    env = create_core_env(1, 50, 50, 5, 0, {1.0: 1}, max_rails_between_cities=3, max_rail_pairs_in_city=2)
 
-    faulty_seed = 1954
+    faulty_seed = 163843691
     env.seed(faulty_seed)
     try:
         env.reset()

@@ -30,7 +30,7 @@ if __name__ == '__main__':
     step: int = 0
     done: bool = False
     while not done:
-        action = policy.compute_action(obs, actor_id=env.actor_id(), maze_state=env.get_maze_state())
+        action = policy.compute_action(obs, actor_id=env.actor_id(), maze_state=env.get_maze_state(), env=None)
         obs, rewards, done, info = env.step(action)
         step += 1
 

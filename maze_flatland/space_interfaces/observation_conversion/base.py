@@ -5,7 +5,7 @@ import pickle
 from abc import ABC
 from typing import Any
 
-import gym
+import gymnasium as gym
 from flatland.core.env_observation_builder import ObservationBuilder
 from maze.core.annotations import override
 from maze.core.env.maze_state import MazeStateType
