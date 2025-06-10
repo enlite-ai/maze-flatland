@@ -122,6 +122,7 @@ class FlatlandRendererBase(Renderer):
             plt.savefig(f'{save_in_dir}/render_{maze_state.env_time}-{maze_state.current_train_id}.png')
             plt.close()
 
+    # pylint: disable=protected-access
     def _render_base_grid(
         self,
         maze_state: FlatlandMazeState,
@@ -171,7 +172,7 @@ class FlatlandRendererBase(Renderer):
         plt.text(
             20,
             40,
-            f'{maze_state.env_time}-{maze_state.current_train_id} / {maze_state.max_episode_steps}',
+            f'{rail_env._elapsed_steps}-{maze_state.current_train_id} / {rail_env._max_episode_steps}',
             fontsize=30,
             bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 5},
         )

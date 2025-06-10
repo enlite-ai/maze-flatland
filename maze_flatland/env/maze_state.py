@@ -13,8 +13,9 @@ import flatland.envs.agent_utils
 import flatland.envs.observations
 import flatland.envs.rail_env
 import numpy as np
+from flatland.core.grid.rail_env_grid import RailEnvTransitionsEnum
 from flatland.envs.agent_utils import TrainState
-from flatland.envs.distance_map import DistanceMap
+from flatland.envs.rail_env import RailEnv
 from maze_flatland.env.maze_action import FlatlandMazeAction
 
 
@@ -23,19 +24,46 @@ class _node_visited_status(IntEnum):
 
     Possible values are:
     NOT_VISITED: Never encountered this node before;
-    VISITED: Node encountered during the current expansion.
+    VISITING: Node encountered during the current expansion.
         In the chain of calls, one of the parent has visited this node.
+    FULLY_VISITED: Node fully expanded, does not have any more children left to evaluate.
     DEAD: Node has been visited and already proved that will never move again.
     SAFE: Node has been visited and already proved that it could, theoretically, move.
     """
 
     NOT_VISITED = 0
-    VISITED = 1
-    DEAD = 2
-    SAFE = 3
+    VISITING = 1
+    FULLY_VISITED = 2
+    DEAD = 3
+    SAFE = 4
 
 
-def cycling_block_identifier(train_id: int, node_visited: list[int], node_relations: dict[int : list[int]]) -> bool:
+def propagate_status(
+    train_handle: int, node_visited: list[int], node_relations: dict[int : list[int]], status: _node_visited_status
+) -> None:
+    """Iterates through the node relations of the current node id and overrides
+        the FULLY_VISITED to the given status.
+
+    :param train_handle: the current train handle.
+    :param node_visited: Status of the nodes that have been visited.
+    :param node_relations: Relations for blocked trains.
+    :param status: Status to be overridden.
+    """
+    assert status in (_node_visited_status.DEAD, _node_visited_status.SAFE)
+    recursive_nodes_to_check = node_relations[train_handle]
+    for tid in recursive_nodes_to_check:
+        if node_visited[tid] != _node_visited_status.FULLY_VISITED:
+            if status == _node_visited_status.DEAD:
+                assert node_visited[tid] in (_node_visited_status.DEAD, _node_visited_status.VISITING)
+            else:
+                assert node_visited[tid] in (_node_visited_status.SAFE, _node_visited_status.VISITING)
+            continue
+        # override the status
+        node_visited[tid] = status
+        propagate_status(tid, node_visited, node_relations, status)
+
+
+def cycling_block_identifier(train_id: int, node_visited: list[int], node_relations: dict[int : list[int]]) -> int:
     """Identifies cycling blocks aka deadlocks through recursive calls.
 
     It recursively explores the obstructing node_relations between trains to identify if
@@ -48,37 +76,46 @@ def cycling_block_identifier(train_id: int, node_visited: list[int], node_relati
     :param node_relations: Dictionary holding the mapping of blocked trains to blocking trains.
     :param node_visited: List of nodes, trains ids in this case, already visited/checked.
 
-    :return: Boolean flag indicating whether a train is in a deadlock.
+    :return: Status of a train.
     """
-    # Define base conditions -> already visited:
-    if node_visited[train_id] == _node_visited_status.SAFE:
-        return False
-    if node_visited[train_id] == _node_visited_status.DEAD:
-        return True
-    if node_visited[train_id] == _node_visited_status.VISITED:
-        # if already visited then it's a cycle.
-        return True
-
     if train_id not in node_relations:
-        node_visited[train_id] = _node_visited_status.SAFE  # Flag as visited and safe
         # if train not blocked, then it is not a deadlock
-        return False
+        node_visited[train_id] = _node_visited_status.SAFE  # Flag as visited and safe
+    if node_visited[train_id] != _node_visited_status.NOT_VISITED:
+        return node_visited[train_id]
 
     # Flag as visited (currently exploring this node)
-    node_visited[train_id] = _node_visited_status.VISITED
+    node_visited[train_id] = _node_visited_status.VISITING
     # check nodes linked recursively
     recursive_nodes_to_check = node_relations[train_id]
     # init flag
-    tmp_train_is_dead = True
-    for blocking_train in recursive_nodes_to_check:
-        visited_train_status = cycling_block_identifier(blocking_train, node_visited, node_relations)
-        # update the current flag.
-        tmp_train_is_dead = tmp_train_is_dead and visited_train_status
-        # if not dead stop computation
-        if not tmp_train_is_dead:
-            break
-    node_visited[train_id] = _node_visited_status.DEAD if tmp_train_is_dead else _node_visited_status.SAFE
-    return tmp_train_is_dead
+    trains_status = [
+        cycling_block_identifier(tid_blocking_train, node_visited, node_relations)
+        for tid_blocking_train in recursive_nodes_to_check
+    ]
+    # if not dead stop computation
+    tmp_train_is_safe = _node_visited_status.SAFE in trains_status
+    tmp_train_is_dead = _node_visited_status.DEAD in trains_status
+    train_related_status = np.asarray(node_visited)[recursive_nodes_to_check]
+    if (
+        np.all(train_related_status == _node_visited_status.FULLY_VISITED)
+        or tmp_train_is_dead
+        and _node_visited_status.FULLY_VISITED in train_related_status
+    ):
+        # if all visiting then all have circular dependency, hence dead.
+        tmp_train_is_dead = True
+        propagate_status(train_id, node_visited, node_relations, _node_visited_status.DEAD)
+    elif tmp_train_is_safe and _node_visited_status.FULLY_VISITED in train_related_status:
+        # the circular dependency can be broken by at least a train, hence all safe.
+        propagate_status(train_id, node_visited, node_relations, _node_visited_status.SAFE)
+
+    if tmp_train_is_safe:
+        node_visited[train_id] = _node_visited_status.SAFE
+    elif tmp_train_is_dead:
+        node_visited[train_id] = _node_visited_status.DEAD
+    else:
+        node_visited[train_id] = _node_visited_status.FULLY_VISITED
+    return node_visited[train_id]
 
 
 def detect_deadlocks(train_state: list[MazeTrainState]):
@@ -88,7 +125,11 @@ def detect_deadlocks(train_state: list[MazeTrainState]):
     node_relations = detect_blocks_and_obstructions(train_state)
     node_visited = [_node_visited_status.NOT_VISITED for _ in train_state]
     for train in train_state:
-        train.deadlock = cycling_block_identifier(train.handle, node_visited, node_relations)
+        node_status = cycling_block_identifier(train.handle, node_visited, node_relations)
+        assert node_status != _node_visited_status.FULLY_VISITED, (
+            f'FULLY_VISITED for train {train.handle} ' f'should be resolved through propagation.'
+        )
+        train.deadlock = _node_visited_status.DEAD == node_status
 
 
 def detect_blocks_and_obstructions(train_states: list[MazeTrainState]) -> dict[int, list[int]]:
@@ -219,7 +260,7 @@ class ActionState:
     :param direction: Direction of the train.
     :param transitions: Transitions of the current cell occupied by the train.
     :param action: Possible action to be considered.
-    :param distance_map: The distance map of the current grid.
+    :param rail_env: RailEnvironment reference.
     """
 
     def __init__(
@@ -229,14 +270,20 @@ class ActionState:
         direction: int,
         transitions: tuple[int, int, int, int],
         action: FlatlandMazeAction,
-        distance_map: DistanceMap,
+        rail_env: RailEnv,
     ):
+        distance_map = rail_env.distance_map
         self.obstructed_by = None
         self.direction = get_future_direction(action, direction)
         self.target_cell = get_next_cell(action, transitions, position, self.direction)
         self.goal_distance = np.inf
         if self.target_cell is not None:
-            self.goal_distance = _fetch_geodesic_distance(handle, self.target_cell, self.direction, distance_map)
+            try:
+                distance = _fetch_geodesic_distance(handle, self.target_cell, self.direction, distance_map)
+            except IndexError:
+                # catch case target on border.
+                distance = np.inf
+            self.goal_distance = distance
 
     @property
     def dead_end(self):
@@ -275,11 +322,13 @@ class MazeTrainState:
         self.env_time = rail_env._elapsed_steps
         self.max_episode_steps = rail_env._max_episode_steps
         self.status = train.state  # old trains_status
-        self.speed = train.speed_counter.speed  # old trains_speeds
+        self.current_speed = train.speed_counter.speed
+        self.speed = train.speed_counter.max_speed  # old trains_speeds
         self.target = train.target  # old trains_targets
         self.initial_position = train.initial_position  # old trains_initial_positions
         self.direction = train.direction  # old trains_direction
         self.position = train.position if self.is_on_map() else self.infer_position()
+        self.cell_int_id = rail_env.rail.grid[self.position[0], self.position[1]]  # int id of the current cell.
         self.earliest_departure = train.earliest_departure  # old earliest_departure
         self.latest_arrival = train.latest_arrival  # old latest_arrival
         self.malfunction_time_left = train.malfunction_handler.malfunction_down_counter  # old trains_malfunctions
@@ -293,10 +342,9 @@ class MazeTrainState:
         self.possible_transition = get_switches_agent_oriented(
             self.direction, rail_env.rail.get_transitions(self.position[0], self.position[1], self.direction)
         )
+
         self.actions_state = {
-            a: ActionState(
-                self.handle, self.position, self.direction, self.possible_transition, a, rail_env.distance_map
-            )
+            a: ActionState(self.handle, self.position, self.direction, self.possible_transition, a, rail_env)
             for a in (FlatlandMazeAction.DEVIATE_LEFT, FlatlandMazeAction.GO_FORWARD, FlatlandMazeAction.DEVIATE_RIGHT)
         }
         # if a train does not have a solution from the origin.
@@ -333,12 +381,13 @@ class MazeTrainState:
 
         :return: True if is blocked, false otherwise
         """
-
-        return (self.is_on_map() or self.status == TrainState.READY_TO_DEPART) and all(
+        action_obstructed_flag = [
             action_state.obstructed
             for action_state in self.actions_state.values()
             if action_state.target_cell is not None
-        )
+        ]
+        on_map_or_ready = self.is_on_map() or self.status == TrainState.READY_TO_DEPART
+        return on_map_or_ready and all(action_obstructed_flag) and len(action_obstructed_flag) > 0
 
     def get_action_for_direction(self, global_direction: int) -> FlatlandMazeAction:
         """Returns the action needed to follow a certain global direction.
@@ -355,7 +404,9 @@ class MazeTrainState:
     @property
     def in_transition(self) -> bool:
         """Returns true if the agent is "secretly" transitioning within a cell."""
-        return not self.entering_cell
+        fractional_speed = self.speed < 1
+        stop_action_given = self.last_action == FlatlandMazeAction.STOP_MOVING
+        return not self.entering_cell and fractional_speed and not stop_action_given and not self.deadlock
 
     @property
     def time_left_to_scheduled_arrival(self) -> int:
@@ -404,6 +455,13 @@ class MazeTrainState:
     def dead_ends(self) -> list[FlatlandMazeAction]:
         """Return a list of actions leading to a dead end."""
         return [action for action, state in self.actions_state.items() if state.dead_end]
+
+    def should_reverse_dir(self) -> bool:
+        """Return whether the train is standing on a reversible dead-end and therefore should revers its direction.
+
+        :return: True if the train is standing on a reversible dead-end, False otherwise.
+        """
+        return RailEnvTransitionsEnum.is_deadend(self.cell_int_id)
 
 
 def get_switches_agent_oriented(agent_dir: int, global_switches: tuple[bool]) -> tuple[Any, ...]:

@@ -97,3 +97,11 @@ class IncludeOutOfTimeTrainsInEarlyTermination(BaseEarlyTermination):
         base_termination = super()._check_no_train_can_move(maze_state)
         trains_out_of_time = np.asarray([train.out_of_time for train in maze_state.trains])
         return np.logical_or(base_termination, trains_out_of_time)
+
+
+class NoEarlyTermination(BaseEarlyTermination):
+    """Base class that never truncates an episode"""
+
+    def check_for_termination(self, maze_state: FlatlandMazeState) -> bool:
+        """Base implementation of termination condition that returns False."""
+        return False

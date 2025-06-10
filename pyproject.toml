@@ -1,0 +1,34 @@
+# pyproject.toml for maze-flatland
+[build-system]
+requires = ['setuptools>=61.0', 'wheel']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'maze_flatland'
+version = '0.1.0'
+description = ''
+readme = { file = 'readme.md', content-type = 'text/markdown' }
+authors = [{ name = 'enliteAI GmbH', email = 'office@enlite.ai' }]
+urls = { Homepage = 'https://enlite.ai', Repository = 'https://github.com/enlite-ai/maze-flatland' }
+license = { file = "LICENSE" }
+requires-python = '>3.9'
+dependencies = []
+
+[tool.setuptools.packages.find]
+# Start package search from the current directory
+where = ['.']
+# Use patterns
+include = ['maze_flatland', 'maze_flatland.*', 'hydra_plugins']
+# Enable namespace discovery (similar to find_namespace_packages)
+namespaces = true
+
+[tool.setuptools]
+include-package-data = true
+license-files = ['LICENSE']
+
+[tool.setuptools.package-data]
+'*' = ['*.yaml', '*.yml']
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = 'INFO'

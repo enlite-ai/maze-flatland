@@ -90,10 +90,10 @@ def test_rail_env_reset():
     seeds = [1234, 9999]
     malf_rate = 1 / 10
     env = create_core_env(3, 37, 37, 2, malf_rate, {1.0: 1})
-    for seed in seeds:
+    env_2 = create_core_env(3, 37, 37, 2, malf_rate, {1.0: 1})
+    for seed in seeds:  # seeds:
         env.seed(seed)
         s1 = env.reset()
-        env_2 = create_core_env(3, 37, 37, 2, malf_rate, {1.0: 1})
         env_2.seed(seed)
         s2 = env_2.reset()
         assert check_if_equal(s1, s2)
@@ -102,8 +102,41 @@ def test_rail_env_reset():
             action = random.choice(
                 [FlatlandMazeAction.GO_FORWARD, FlatlandMazeAction.DEVIATE_LEFT, FlatlandMazeAction.DEVIATE_RIGHT]
             )
-            s1, _, d1, _ = env.step(action)
+            s1, _, done, _ = env.step(action)
             s2, _, d2, _ = env_2.step(action)
-            assert d1 == d2
-            done = d1
+            assert done == d2
             assert check_if_equal(s1, s2)
+
+
+def test_init_equal_to_reset():
+    """Test that initialising from scratch is equal to resetting."""
+    malf_rate = 1 / 10
+    seed1 = 1234
+    seed2 = 9999
+    env = create_core_env(3, 37, 37, 2, malf_rate, {1.0: 1})
+    env_2 = create_core_env(3, 37, 37, 2, malf_rate, {1.0: 1})
+    # seed env with 1st seed and take few steps
+    env.seed(seed1)
+    _ = env.reset()
+    for _ in range(10):
+        action = random.choice(
+            [FlatlandMazeAction.GO_FORWARD, FlatlandMazeAction.DEVIATE_LEFT, FlatlandMazeAction.DEVIATE_RIGHT]
+        )
+        _ = env.step(action)
+    # seed env with 2nd seed
+    env.seed(seed2)
+    # seed once env_2 with seed 2.
+    env_2.seed(seed2)
+    # run and check that these are equivalent.
+    s1 = env.reset()
+    s2 = env_2.reset()
+    assert check_if_equal(s1, s2)
+    done = False
+    while not done:
+        action = random.choice(
+            [FlatlandMazeAction.GO_FORWARD, FlatlandMazeAction.DEVIATE_LEFT, FlatlandMazeAction.DEVIATE_RIGHT]
+        )
+        s1, _, done, _ = env.step(action)
+        s2, _, d2, _ = env_2.step(action)
+        assert done == d2
+        assert check_if_equal(s1, s2, 1)

@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 
 import maze_flatland.conf as conf_module
+from flatland.envs.malfunction_generators import MalfunctionParameters
 from maze.core.env.maze_env import MazeEnv
 from maze.core.utils.config_utils import make_env_from_hydra
 from maze.core.utils.factory import Factory
@@ -64,6 +65,7 @@ def env_from_dict_configs_example() -> FlatlandEnvironment:
             'max_rail_pairs_in_city': 3,
         },
         termination_conditions=BaseEarlyTermination(),
+        timetable_generator=None,
         renderer={
             '_target_': 'maze_flatland.env.renderer.FlatlandRendererBase',
             'img_width': 1500,
@@ -131,3 +133,11 @@ def test_flatland_env_registration():
 
     env = create_env_for_testing(observation_conversion={'train_move': SimpleObservationConversion(False)})
     assert isinstance(env, FlatlandEnvironment)
+
+
+def test_malfunction_generator_correctly_instantiated():
+    """Check that the malfunction generator data are correctly instantiated when env init through Hydra."""
+    env = env_from_hydra_example()
+    mfp = env.rail_env.malfunction_generator.MFP
+    assert isinstance(mfp, MalfunctionParameters), f'Wrong type {type(mfp)}'
+    assert env.rail_env.malfunction_generator.get_process_data() == mfp

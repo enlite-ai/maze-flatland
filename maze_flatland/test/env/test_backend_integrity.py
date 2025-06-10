@@ -216,7 +216,7 @@ class TestMalfunctionsOnMapSpeed1(unittest.TestCase):
         agent = self.rail_env.agents[0]
         self.rail_env.step({0: RailEnvActions.DO_NOTHING})
         self.rail_env.step({0: RailEnvActions.MOVE_FORWARD})
-        for ii in range(5):
+        for ii in range(4):
             self.rail_env.step({0: RailEnvActions.DO_NOTHING})
         assert agent.state == TrainState.MOVING
 
@@ -227,7 +227,7 @@ class TestMalfunctionsOnMapSpeed1(unittest.TestCase):
         self.rail_env.step({0: RailEnvActions.DO_NOTHING})
         self.rail_env.step({0: RailEnvActions.MOVE_FORWARD})
         self.rail_env.step({0: RailEnvActions.STOP_MOVING})
-        for ii in range(4):
+        for ii in range(3):
             self.rail_env.step({0: RailEnvActions.DO_NOTHING})
         assert agent.state == TrainState.STOPPED
 
@@ -275,7 +275,7 @@ class TestMalfunctionsOnMapSpeed1(unittest.TestCase):
 
                     self.rail_env.step({0: first_action})
                     if first_action in [RailEnvActions.MOVE_FORWARD]:
-                        assert agent.position == (pos_before_malfunction[0] + 1, pos_before_malfunction[1])
+                        assert agent.position == (pos_before_malfunction[0] - 1, pos_before_malfunction[1])
                         assert agent.state == TrainState.MOVING
                     else:
                         assert agent.position == pos_before_malfunction
@@ -299,7 +299,7 @@ class TestMalfunctionsOffMapSpeed1(unittest.TestCase):
         """Fast-forward to a state for testing."""
         # After 7 step the agent should be in a malfunction
         agent = self.rail_env.agents[0]
-        for ii in range(7):
+        for ii in range(6):
             self.rail_env.step({0: RailEnvActions.DO_NOTHING})
         assert agent.state == TrainState.READY_TO_DEPART
 
@@ -307,7 +307,7 @@ class TestMalfunctionsOffMapSpeed1(unittest.TestCase):
         """Fast-forward to a state for testing."""
         # After 7 step the agent should be in a malfunction
         agent = self.rail_env.agents[0]
-        for ii in range(7):
+        for ii in range(6):
             self.rail_env.step({0: RailEnvActions.STOP_MOVING})
         assert agent.state == TrainState.READY_TO_DEPART
 
@@ -327,7 +327,11 @@ class TestMalfunctionsOffMapSpeed1(unittest.TestCase):
             ]:
                 # The last action is the action that is (tried) to be performed when the agent is going into a
                 # malfunction.
-                for first_action in [RailEnvActions.MOVE_FORWARD, RailEnvActions.STOP_MOVING]:
+                for first_action in [
+                    RailEnvActions.MOVE_FORWARD,
+                    RailEnvActions.STOP_MOVING,
+                    RailEnvActions.DO_NOTHING,
+                ]:
                     # The first action is the action performed when the state == MALFUNCTION and
                     # malfunction_handler.in_malfunction == FALSE
                     self.setUp()
@@ -352,60 +356,15 @@ class TestMalfunctionsOffMapSpeed1(unittest.TestCase):
                     assert agent.state.is_off_map_state()
 
                     self.rail_env.step({0: first_action})
-                    if first_action == RailEnvActions.MOVE_FORWARD:
+                    if first_action == RailEnvActions.DO_NOTHING:
+                        assert agent.state.is_off_map_state()
+                        assert agent.state == TrainState.READY_TO_DEPART
+                    elif first_action == RailEnvActions.MOVE_FORWARD:
                         assert agent.state.is_on_map_state()
                         assert agent.state == TrainState.MOVING
                     else:
                         assert agent.state.is_on_map_state()
                         assert agent.state == TrainState.STOPPED
-
-    def test_off_map_malfunction_DO_NOTHING_after_malfunction(self):
-        """Test the behaviour for malfunctioning trains going into a malfunction when the first action
-        is move or stop.
-        ==> The train will either be placed on map or stay off map depending on the last_action_before.
-        """
-        for fast_forward_method in [
-            self.fast_forward_before_malfunction_with_do_nothing,
-            self.fast_forward_before_malfunction_with_stop,
-        ]:
-            # The last action is the action that is (tried) to be performed when the agent is going into a
-            # malfunction.
-            for last_action_before in [
-                RailEnvActions.MOVE_FORWARD,
-                RailEnvActions.STOP_MOVING,
-                RailEnvActions.DO_NOTHING,
-            ]:
-                first_action = RailEnvActions.DO_NOTHING
-                # The first action is the action performed when the state == MALFUNCTION and
-                # malfunction_handler.in_malfunction == FALSE
-                self.setUp()
-                fast_forward_method()
-                agent = self.rail_env.agents[0]
-                assert agent.state == TrainState.READY_TO_DEPART
-
-                # Here is the action that will be saved!
-                self.rail_env.step({0: last_action_before})
-
-                assert agent.state == TrainState.MALFUNCTION_OFF_MAP
-                assert agent.malfunction_handler.malfunction_down_counter == 5
-
-                for _ in range(5):
-                    self.rail_env.step({0: RailEnvActions.DO_NOTHING})
-
-                # The step before the malfunction
-                assert agent.state == TrainState.MALFUNCTION_OFF_MAP
-                assert not agent.malfunction_handler.in_malfunction
-                assert agent.malfunction_handler.malfunction_down_counter == 0
-                assert agent.position is None
-                assert agent.state.is_off_map_state()
-
-                self.rail_env.step({0: first_action})
-                if last_action_before in [RailEnvActions.DO_NOTHING, RailEnvActions.STOP_MOVING]:
-                    assert agent.state.is_off_map_state()
-                    assert agent.state == TrainState.READY_TO_DEPART
-                else:
-                    assert agent.state.is_on_map_state()
-                    assert agent.state == TrainState.MOVING
 
     def test_off_map_malfunction(self):
         """Test the behaviour for malfunctioning trains going into a malfunction."""
@@ -483,10 +442,10 @@ class TestMalfunctionsOffMapWaitingSpeed1(unittest.TestCase):
     def fast_forward_before_malfunction_in_waiting(self):
         """Fast-forward to a state for testing."""
         # After 7 step the agent should be in a malfunction
-        for ii in range(11):
+        for ii in range(10):
             self.rail_env.step({aa.handle: RailEnvActions.STOP_MOVING for aa in self.rail_env.agents})
 
-        agent = self.rail_env.agents[1]
+        agent = self.rail_env.agents[3]
         assert agent.state == TrainState.WAITING
 
     def test_waiting_malfunction(self):
@@ -514,18 +473,18 @@ class TestMalfunctionsOffMapWaitingSpeed1(unittest.TestCase):
                 ]:
                     self.setUp_v1()
                     fast_forward_method()
-                    agent = self.rail_env.agents[1]
+                    agent = self.rail_env.agents[3]
                     assert agent.state == TrainState.WAITING
 
                     # Last action before the malfunction, this will not be saved when the agent is waiting.
-                    self.rail_env.step({1: last_action_before})
+                    self.rail_env.step({3: last_action_before})
 
                     assert agent.state == TrainState.MALFUNCTION_OFF_MAP
                     assert agent.malfunction_handler.malfunction_down_counter == 5
                     assert not agent.action_saver.is_action_saved
 
                     for _ in range(5):
-                        self.rail_env.step({1: RailEnvActions.DO_NOTHING})
+                        self.rail_env.step({3: RailEnvActions.DO_NOTHING})
 
                     # The step before the malfunction
                     assert agent.state == TrainState.MALFUNCTION_OFF_MAP
@@ -534,7 +493,7 @@ class TestMalfunctionsOffMapWaitingSpeed1(unittest.TestCase):
                     assert agent.position is None
                     assert agent.state.is_off_map_state()
 
-                    self.rail_env.step({1: first_action})
+                    self.rail_env.step({3: first_action})
                     print(last_action_before, first_action)
                     if first_action == RailEnvActions.MOVE_FORWARD:
                         assert agent.state.is_on_map_state()
@@ -558,6 +517,9 @@ class TestMalfunctionsOffMapWaitingSpeed1(unittest.TestCase):
         )
         _ = self.rail_env.reset(random_seed=1234)
 
+        for ii in range(4):
+            self.rail_env.step({})
+
     def test_waiting_malfunction_back_to_waiting(self):
         """Make sure that if a malfunction occurs while waiting and the malfunction is shorter than the earliest
         departure the train will just go back to the waiting state.
@@ -571,14 +533,14 @@ class TestMalfunctionsOffMapWaitingSpeed1(unittest.TestCase):
             # malfunction.
             for first_action in [RailEnvActions.MOVE_FORWARD, RailEnvActions.STOP_MOVING, RailEnvActions.DO_NOTHING]:
                 self.setUp_v2()
-                agent = self.rail_env.agents[12]
+                agent = self.rail_env.agents[4]
                 assert agent.state == TrainState.WAITING
-                self.rail_env.step({12: last_action_before})
+                self.rail_env.step({4: last_action_before})
                 assert agent.state == TrainState.MALFUNCTION_OFF_MAP
                 assert agent.malfunction_handler.malfunction_down_counter == 5
 
                 for _ in range(5):
-                    self.rail_env.step({1: RailEnvActions.DO_NOTHING})
+                    self.rail_env.step({4: RailEnvActions.DO_NOTHING})
 
                 # The step before the malfunction
                 assert agent.state == TrainState.MALFUNCTION_OFF_MAP
@@ -587,7 +549,7 @@ class TestMalfunctionsOffMapWaitingSpeed1(unittest.TestCase):
                 assert agent.position is None
                 assert agent.state.is_off_map_state()
 
-                self.rail_env.step({1: first_action})
+                self.rail_env.step({4: first_action})
                 assert agent.state.is_off_map_state()
                 assert agent.state == TrainState.WAITING
                 assert not agent.action_saver.is_action_saved

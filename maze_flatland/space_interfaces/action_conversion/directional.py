@@ -38,12 +38,17 @@ class DirectionalAC(FlatlandActionConversionInterface):
         action = FlatlandMazeAction(action[self.step_key])
 
         train = maze_state.trains[maze_state.current_train_id]
+        travel_time_from_departure = train.best_travel_time_to_target + 1
         if action == FlatlandMazeAction.DO_NOTHING:
             assert (
                 train.is_done()
                 or train.status in [TrainState.WAITING, TrainState.MALFUNCTION_OFF_MAP]
                 or (train.status == TrainState.MALFUNCTION and train.malfunction_time_left > 0)
                 or train.unsolvable
+                or (
+                    travel_time_from_departure + train.env_time > train.max_episode_steps
+                    and train.has_not_yet_departed()
+                )
             )
         return action
 
@@ -78,6 +83,8 @@ class DirectionalAC(FlatlandActionConversionInterface):
         elif train_mask.skip_decision:
             # enable do nothing
             mask[FlatlandMazeAction.DO_NOTHING] = True
+        elif train_mask.reverse_dir:
+            mask[FlatlandMazeAction.GO_FORWARD] = True
         # assess positions.
         for possible_pos in train_mask.possible_next_positions:
             if np.all(possible_pos == train_state.position):

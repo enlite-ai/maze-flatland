@@ -9,7 +9,7 @@ dependencies:
   - git
   - pip
   - pip:
-      - flatland-rl==4.0.4
+      - flatland-rl==4.1.2
       - --extra-index-url https://download.pytorch.org/whl/cpu
       - torch==2.5.1+cpu
       - --find-links https://data.pyg.org/whl/torch-2.5.1+cpu.html

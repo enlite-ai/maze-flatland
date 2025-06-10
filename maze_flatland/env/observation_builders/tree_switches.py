@@ -27,8 +27,6 @@ from maze_flatland.env.fast_methods import fast_delete, fast_where
 from maze_flatland.env.maze_state import _fetch_geodesic_distance
 from maze_flatland.env.prediction_builders.malf_shortest_path_predictor import _get_agent_position
 
-# pylint: disable=too-many-lines
-
 
 class CellType(IntEnum):
     """
@@ -40,6 +38,7 @@ class CellType(IntEnum):
     DEAD_END = 2  # cells has no exit point
     TERMINAL = 3  # cell is already visited or something is wrong, i.e., derail.
     TARGET = 4  # cell holds a target.
+    OUT_OF_MAP = 5  # cell is out of the map limits.
 
 
 @dataclass
@@ -237,7 +236,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
             if not agent_is_off_map and _agent.position:
                 self.location_has_agent[tuple(_agent.position)] = 1
                 self.location_has_agent_direction[tuple(_agent.position)] = _agent.direction
-                self.location_has_agent_speed[tuple(_agent.position)] = _agent.speed_counter.speed
+                self.location_has_agent_speed[tuple(_agent.position)] = _agent.speed_counter.max_speed
                 if self.deadlock_flags[train_idx]:
                     self.location_has_agent_deadlocked[tuple(_agent.position)] = train_idx
                 self.location_has_agent_malfunction[
@@ -289,7 +288,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
             num_agents_same_direction=0,
             num_agents_opposite_direction=0,
             num_agents_malfunctioning=agent.malfunction_handler.malfunction_down_counter,
-            speed_min_fractional=agent.speed_counter.speed,
+            speed_min_fractional=agent.speed_counter.max_speed,  # record the lowest maximum speed a train can handle
             num_agents_ready_to_depart=0,
             idx_deadlock_trains=[],
             children={},
@@ -353,7 +352,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         """
 
         # time required to travel a single cell.
-        time_per_cell = 1.0 / agent.speed_counter.speed
+        time_per_cell = 1.0 / agent.speed_counter.max_speed
         # feature tracking to fill the node's param.
         own_target_encountered = np.inf
         other_agent_encountered = np.inf
@@ -380,9 +379,19 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         exploring = True
 
         while exploring:
+            out_of_map = not (
+                0 <= projected_position[0] < self.env.height and 0 <= projected_position[1] < self.env.width
+            )
+
+            if out_of_map:
+                # stop exploration as we are out of map.
+                last_cell_type = CellType.OUT_OF_MAP  # flag it as a special terminal cell
+                break
+
             if projected_position in self.location_has_agent_deadlocked:
                 idx_trains_encountered_deadlocked.append(self.location_has_agent_deadlocked.get(projected_position))
             if self.location_has_agent.get(projected_position, 0) == 1:
+                # this is based on the current agent. without relying on the prediction of the agent moving..
                 if tot_dist < other_agent_encountered:
                     other_agent_encountered = tot_dist
 
@@ -425,6 +434,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
                 post_step = min(self.max_prediction_depth - 1, predicted_time + 1)
                 for time in (predicted_time, pre_step, post_step):
                     if int_position in fast_delete(self.predicted_pos[time], agent.handle):
+                        # step where looks into the future..
                         conflict_found, conflict_info = self.check_potential_conflict(
                             time,
                             int_position,
@@ -515,6 +525,9 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         elif last_cell_type == CellType.TERMINAL:
             dist_to_next_branch = np.inf
             dist_min_to_target = distance_map_handle[projected_position[0], projected_position[1], projected_direction]
+        elif last_cell_type == CellType.OUT_OF_MAP:
+            dist_to_next_branch = np.inf
+            dist_min_to_target = np.inf
         else:
             dist_to_next_branch = tot_dist
             dist_min_to_target = distance_map_handle[projected_position[0], projected_position[1], projected_direction]
@@ -603,9 +616,12 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         # Start from the current orientation, and see which transitions are available;
         # organize them as [left, forward, right, back], relative to the current orientation
         # Get the possible transitions
-        possible_transitions = self.env.rail.get_transitions(*position, direction)
+        if last_cell_type == CellType.OUT_OF_MAP:
+            possible_transitions = (0, 0, 0, 0)  # no transition possible.
+        else:
+            possible_transitions = self.env.rail.get_transitions(*position, direction)
 
-        # remove last node enqueed and create new vertex
+        # remove last node enqueued and create new vertex
         _node_expanded, _direction_expanded = self._nodes_expanding.pop()
         current_vertex = Vertex(depth=depth, node=node, edges=[])
         _node_expanded.edges.append(current_vertex)
@@ -794,7 +810,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
                 self.env.distance_map,
             )
             # +1 is the expected delay to stay put for a timestep.
-            travel_time = (target_distance / agent.speed_counter.speed) + 1
+            travel_time = (target_distance / agent.speed_counter.max_speed) + 1
             arrival_delay = max(0, (travel_time + self.env._elapsed_steps) - agent.latest_arrival)
             if np.isinf(arrival_delay):
                 # agent will not depart,
@@ -853,7 +869,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
                 distance_to_target = _fetch_geodesic_distance(
                     train_handle, new_pos, new_direction, self.env.distance_map
                 )
-                time_to_target = distance_to_target / agent.speed_counter.speed
+                time_to_target = distance_to_target / agent.speed_counter.max_speed
                 if time_to_target <= time_left:
                     # we allow for a possible path whenever the train can reach its target destination
                     # before the end of the episode.
@@ -892,7 +908,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
                 distance_to_target = _fetch_geodesic_distance(
                     train_handle, new_pos, new_direction, self.env.distance_map
                 )
-                time_to_target = distance_to_target / agent.speed_counter.speed
+                time_to_target = distance_to_target / agent.speed_counter.max_speed
                 if time_to_target <= time_left:
                     # we allow for a possible path whenever the train can reach its target destination
                     # before the end of the episode.

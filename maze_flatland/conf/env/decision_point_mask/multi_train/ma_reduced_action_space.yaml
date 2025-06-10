@@ -47,6 +47,7 @@ env:
       grid_mode: False
       max_rails_between_cities: ${env._.max_rails_between_cities}
       max_rail_pairs_in_city: ${env._.max_rail_pairs_in_city}
+    timetable_generator: ~
     renderer:
       _target_: maze_flatland.env.renderer.FlatlandRendererBase
       img_width: 1500

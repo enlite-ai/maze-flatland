@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 from flatland.core.grid.grid4 import Grid4Transitions
 from flatland.core.grid.grid4_utils import get_new_position
@@ -9,7 +11,6 @@ from flatland.core.grid.rail_env_grid import RailEnvTransitions
 from flatland.envs.agent_utils import EnvAgent
 from flatland.envs.observations import GlobalObsForRailEnv
 from flatland.envs.rail_env import RailEnv
-from flatland.utils.decorators import enable_infrastructure_lru_cache
 from maze.core.env.maze_state import MazeStateType
 
 
@@ -119,21 +120,19 @@ def direction_to_pos_change(direction: int) -> tuple[int, int]:
     return direction_to_pos_change_map[direction]
 
 
-# 150x150 grid should take ~ 350_000
-@enable_infrastructure_lru_cache(maxsize=500_000)
-def get_transitions_map(rail_env: RailEnv, use_cached: bool = True) -> np.ndarray:
+# Max instances in memory
+@lru_cache(maxsize=50)
+def get_transitions_map(rail_env: RailEnv, explicit_seed: int) -> np.ndarray:
     """Extracts the transition of each cell from a given rail environment.
+        rail_env reference may not change, although it's inside content is changing, e.g., seed.
+        Thus, we give the explicit seed to trigger the recomputation.
 
-    :param rail_env: the rail environment.
-    :param use_cached: whether to use cached version or not.
-
+    :param rail_env: The rail environment.
+    :param explicit_seed: Used as a parameter to decide whether to use cached or not.
     :return: a matrix of the grid where each cell is encoded.
             the returned object has a shape of [width, height, 16]
     """
-
-    # when needed re-compute it.
-    if not use_cached:
-        get_transitions_map.cache_clear()
+    _ = explicit_seed
     rail_obs = np.zeros((rail_env.height, rail_env.width, 16))
     for i in range(rail_obs.shape[0]):
         for j in range(rail_obs.shape[1]):
@@ -154,6 +153,7 @@ def agent_to_str(agent: EnvAgent) -> str:
         f'\n\tInitial Position: {agent.initial_position}, initial direction: {agent.initial_direction}, '
         f'target: {agent.target}'
     )
+    txt += f'\n\tEarliest depart: {agent.earliest_departure}, Latest Arrival: {agent.latest_arrival}'
     txt += f'\n\tCurrent Position: {agent.position}, current direction: {agent.direction}'
     txt += '\n\tMalfunction'
     txt += f'\n\t\tin_malfunction              : {agent.malfunction_handler.in_malfunction}'
@@ -162,16 +162,14 @@ def agent_to_str(agent: EnvAgent) -> str:
     txt += f'\n\t\tnum_malfunctions            : {agent.malfunction_handler.num_malfunctions}'
     txt += (
         f'\n\tState Machine: {agent.state_machine.state.name}, '
-        f'previous state: {agent.state_machine.previous_state.name}, '
-        f'next state: {agent.state_machine.next_state.name}'
+        f'previous state: '
+        f'{"None" if agent.state_machine.previous_state is None else agent.state_machine.previous_state.name}, '
+        f'next state: {"None" if agent.state_machine.next_state is None else agent.state_machine.next_state.name}'
     )
     txt += '\n\tState Machine signals:'
     txt += f'\n\t\tin_malfunction              : {agent.state_machine.st_signals.in_malfunction}'
-    txt += f'\n\t\tmalfunction_counter_complete: {agent.state_machine.st_signals.malfunction_counter_complete}'
     txt += f'\n\t\tearliest_departure_reached  : {agent.state_machine.st_signals.earliest_departure_reached}'
     txt += f'\n\t\tstop_action_given           : {agent.state_machine.st_signals.stop_action_given}'
-    txt += f'\n\t\tvalid_movement_action_given : {agent.state_machine.st_signals.valid_movement_action_given}'
-    txt += f'\n\t\tmovement_conflict           : {agent.state_machine.st_signals.movement_conflict}'
     txt += f'\n\t\ttarget_reached              : {agent.state_machine.st_signals.target_reached}'
     txt += f'\n\tActions Saved: {agent.action_saver}'
     return txt

@@ -46,7 +46,7 @@ cd maze-flatland
 ```bash
 conda env create --file environment.yml
 ```
-> **Note:** The default version of flatland-rl is the stable version **4.0.1**.
+> **Note:** The default version of flatland-rl is the stable version **4.1.2**.
 > Modify the `environment.yml` if another version is needed and run the tests to ensure full compatibility.
 - Activate the conda environment:
 ```bash

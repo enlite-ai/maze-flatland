@@ -10,7 +10,6 @@ from flatland.core.env_prediction_builder import PredictionBuilder
 from flatland.envs.agent_utils import EnvAgent, TrainState
 from flatland.envs.distance_map import DistanceMap
 from flatland.envs.rail_env import RailEnvActions
-from flatland.envs.rail_env_shortest_paths import get_valid_move_actions_
 from flatland.envs.rail_trainrun_data_structures import Waypoint
 from maze.core.annotations import override
 from numpy.typing import NDArray
@@ -61,7 +60,7 @@ def prediction_adjusted_off_map_delay(
 
         agent_virtual_position = _get_agent_position(agent)
         agent_virtual_direction = agent.direction
-        agent_speed = agent.speed_counter.speed
+        agent_speed = agent.speed_counter.max_speed
         times_per_cell = int(np.reciprocal(agent_speed))
         prediction = np.zeros(shape=(max_depth + 1, 5))
         prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
@@ -81,12 +80,12 @@ def prediction_adjusted_off_map_delay(
                 prediction[index] = [index, None, None, None, None]
                 continue
             if not shortest_path:
-                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
+                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING.value]
                 continue
 
             if malfunction_counter > 0:
                 malfunction_counter -= 1
-                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING.value]
                 # if train malfunction outside of map decrease waiting time as well...
                 if waiting_time > 0:
                     waiting_time -= 1
@@ -94,7 +93,7 @@ def prediction_adjusted_off_map_delay(
 
             if waiting_time > 0:
                 waiting_time -= 1
-                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING.value]
                 continue
 
             # if fractional speed then stay on the cell.
@@ -139,7 +138,7 @@ def prediction_excluding_off_map_trains(
         if agent.state == TrainState.READY_TO_DEPART:
             agent_virtual_position = agent.initial_position
 
-        agent_speed = agent.speed_counter.speed
+        agent_speed = agent.speed_counter.max_speed
         times_per_cell = int(np.reciprocal(agent_speed))
         prediction = np.zeros(shape=(max_depth + 1, 5))
 
@@ -159,12 +158,12 @@ def prediction_excluding_off_map_trains(
                 prediction[index] = [index, None, None, None, None]
                 continue
             if not shortest_path:
-                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
+                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING.value]
                 continue
 
             if malfunction_counter > 0:
                 malfunction_counter -= 1
-                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING.value]
                 continue
 
             # if fractional speed then stay on the cell.
@@ -201,7 +200,7 @@ def prediction_vanilla(
 
         agent_virtual_position = _get_agent_position(agent)
         agent_virtual_direction = agent.direction
-        agent_speed = agent.speed_counter.speed
+        agent_speed = agent.speed_counter.max_speed
         times_per_cell = int(np.reciprocal(agent_speed))
         prediction = np.zeros(shape=(max_depth + 1, 5))
         prediction[0] = [0, *agent_virtual_position, agent_virtual_direction, 0]
@@ -221,12 +220,12 @@ def prediction_vanilla(
                 prediction[index] = [index, None, None, None, None]
                 continue
             if not shortest_path:
-                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING]
+                prediction[index] = [index, *new_position, new_direction, RailEnvActions.STOP_MOVING.value]
                 continue
 
             if malfunction_counter > 0:
                 malfunction_counter -= 1
-                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING]
+                prediction[index] = [index, *new_position, agent.direction, RailEnvActions.STOP_MOVING.value]
                 continue
 
             # if fractional speed then stay on the cell.
@@ -268,7 +267,11 @@ def _shortest_path_for_agent(
     depth = 0
     shortest_paths = []
     while position != agent_target and depth < max_depth:
-        next_actions = get_valid_move_actions_(direction, position, distance_map.rail)
+        next_actions = distance_map.rail.get_valid_move_actions_(
+            direction,
+            position,
+        )
+
         best_next_action = None
         for next_action in next_actions:
             next_action_distance = distance_map.get()[

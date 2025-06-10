@@ -44,7 +44,15 @@ def compare_backend(rail_env1: RailEnv, rail_env2: RailEnv):
     :param rail_env2: second instance to be compared.
     :return: list of params that do not match.
     """
-    keys_to_exclude = ['seed_history', 'rail_generator', 'line_generator', 'malfunction_process_data', 'obs_dict']
+    # exclude rewards as: DefaultDict cannot be serialised and we have the maze-reward.
+    keys_to_exclude = [
+        'rewards',
+        'seed_history',
+        'rail_generator',
+        'line_generator',
+        'malfunction_process_data',
+        'obs_dict',
+    ]
     dict_re1 = rail_env1.__dict__
     dict_re2 = rail_env2.__dict__
     diff_keys = []
@@ -119,7 +127,6 @@ def test_equivalent_rollout_after_cloning():
     third_sequence_of_states = _do_rollout(custom_env, action_sequence[50:])
     custom_env.deserialize_state(serialised_mid_state)  # restore mid state
     fourth_sequence_of_states = _do_rollout(custom_env, action_sequence[50:])
-
     assert all((check_if_equal(s1, s2) for s1, s2 in zip(first_sequence_of_states, second_sequence_of_states)))
     assert all((check_if_equal(s1, s2) for s1, s2 in zip(third_sequence_of_states, fourth_sequence_of_states)))
 
@@ -158,7 +165,6 @@ def test_clone_different_seed():
 
     _do_rollout(e1, [random.randint(1, 4) for _ in range(50)])
     e2 = init_env_with_malfunctions(0.7, seed=42)
-
     e2.clone_from(e1)
     actions = [random.randint(1, 4) for _ in range(100)]
     states_visited_in_e1 = _do_rollout(e1, actions)

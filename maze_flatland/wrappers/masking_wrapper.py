@@ -11,8 +11,7 @@ from maze.core.env.simulated_env_mixin import SimulatedEnvMixin
 from maze.core.utils.factory import Factory
 from maze.core.wrappers.wrapper import ObservationWrapper
 from maze.utils.bcolors import BColors
-from maze_flatland.env.backend_utils import get_transitions_map
-from maze_flatland.env.masking.mask_builder import LogicMaskBuilder, TrainLogicMask
+from maze_flatland.env.masking.mask_builder import LogicMaskBuilderInterface, TrainLogicMask
 from maze_flatland.env.maze_state import MazeTrainState
 
 
@@ -27,13 +26,13 @@ class FlatlandMaskingWrapper(ObservationWrapper[MazeEnv]):
     def __init__(
         self,
         env: MazeEnv,
-        mask_builder: LogicMaskBuilder,
+        mask_builder: LogicMaskBuilderInterface,
         explain_mask: bool = False,
     ):
         super().__init__(env)
 
         # Instance to the mask builder
-        self.logic_mask_builder = Factory(LogicMaskBuilder).instantiate(mask_builder)
+        self.logic_mask_builder = Factory(LogicMaskBuilderInterface).instantiate(mask_builder)
         self.explain_mask = explain_mask
         self._print_color = '\033[95m'  # magenta
 
@@ -57,10 +56,8 @@ class FlatlandMaskingWrapper(ObservationWrapper[MazeEnv]):
             train_handle = self._current_train_id
         # Get train state from maze state
         train_state = self.get_maze_state().trains[train_handle]
-        # Extract transition map from the railEnv
-        transition_map = get_transitions_map(self._rail_env)
         # Build mask and return
-        logic_train_mask = self.logic_mask_builder.create_train_mask(train_state, transition_map)
+        logic_train_mask = self.logic_mask_builder.create_train_mask(train_state, self._rail_env)
         boolean_mask = self.action_conversion.to_boolean_mask(logic_train_mask, train_state)
         self.print_mask_explanation(boolean_mask, logic_train_mask, train_state)
         return boolean_mask
@@ -71,11 +68,9 @@ class FlatlandMaskingWrapper(ObservationWrapper[MazeEnv]):
         :return: A list of masks.
         """
         maze_state = self.get_maze_state()
-        # Extract transition map from the railEnv
-        transition_map = get_transitions_map(self._rail_env)
         masks = []
         for train_state in maze_state.trains:
-            logic_train_mask = self.logic_mask_builder.create_train_mask(train_state, transition_map)
+            logic_train_mask = self.logic_mask_builder.create_train_mask(train_state, self._rail_env)
             boolean_mask = self.action_conversion.to_boolean_mask(logic_train_mask, train_state)
             masks.append(boolean_mask)
             self.print_mask_explanation(masks[-1], logic_train_mask, train_state)

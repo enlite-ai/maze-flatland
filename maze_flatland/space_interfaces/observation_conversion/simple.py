@@ -46,7 +46,7 @@ class SimpleObservationConversion(BaseObservationConversion):
         self._n_trains = core_env.n_trains
         self._map_height = core_env.rail_env.height
         self._map_width = core_env.rail_env.width
-        all_speeds = [a.speed_counter.speed for a in core_env.rail_env.agents]
+        all_speeds = [a.speed_counter.max_speed for a in core_env.rail_env.agents]
         self._lowest_speed = min(all_speeds)
         self._highest_speed = max(all_speeds)
         self._max_duration = core_env.rail_env.malfunction_generator.MFP.max_duration

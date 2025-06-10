@@ -11,7 +11,7 @@ from maze_flatland.space_interfaces.action_conversion.directional import Directi
 from maze_flatland.space_interfaces.observation_conversion.graph_based_directional import (
     GraphDirectionalObservationConversion,
 )
-from maze_flatland.test.env_instantation import create_core_env
+from maze_flatland.test.env_instantation import create_core_env, create_dummy_env_dead_end
 
 
 def test_equivalence_in_obs_depth_2_and_3():
@@ -100,3 +100,59 @@ def test_conflict():
                         )
                         == node.ca_expected_delay_for_alternative_path
                     )
+
+
+def test_reversible_dead_end_success_to_target():
+    """Test that the tree observation can correctly
+    see the connection to the target through the dead-ends."""
+    env_double_dead_ends = create_dummy_env_dead_end(2)
+    # replace obs conv
+    env_double_dead_ends.observation_conversion_dict['train_move'] = GraphDirectionalObservationConversion(True)
+    env_double_dead_ends.seed(1234)
+    dict_obs_double_dead_ends = env_double_dead_ends.observation_conversion.convert_to_dict(
+        env_double_dead_ends.reset()
+    )
+    # ensure that double dead ends can successfully lead the agent to the target.
+    assert (
+        dict_obs_double_dead_ends['F-L--distance'] == 2.0
+    ), f'Unexpected distance: {dict_obs_double_dead_ends["F-L--distance"]}'
+    assert (
+        dict_obs_double_dead_ends['F-L--target_dist'] == 6
+    ), f'Unexpected target distance: {dict_obs_double_dead_ends["F-L--target_dist"]}'
+    assert dict_obs_double_dead_ends['F-L--deadlock'] == 0
+
+
+def test_dead_end_not_connected_to_target():
+    """Test that the tree observation
+    correctly handles the non-reversible dead-end.
+    """
+    env_single_dead_end = create_dummy_env_dead_end(1)
+    # replace obs conv
+    env_single_dead_end.observation_conversion_dict['train_move'] = GraphDirectionalObservationConversion(True)
+    env_single_dead_end.seed(1234)
+    dict_obs_single_dead_end = env_single_dead_end.observation_conversion.convert_to_dict(env_single_dead_end.reset())
+    # check that single dead end cannot reach the target when going to dead-end
+    assert (
+        dict_obs_single_dead_end['F-L--distance'] == 2.0
+    ), f'Unexpected distance: {dict_obs_single_dead_end["F-L--distance"]}'
+    assert (
+        dict_obs_single_dead_end['F-L--target_dist'] == -1
+    ), f'Unexpected target distance: {dict_obs_single_dead_end["F-L--target_dist"]}'
+    assert dict_obs_single_dead_end['F-L--deadlock'] == 0
+
+
+def test_no_reversible_dead_end():
+    """Test that the tree observation correctly handles the straight cell going outside the boundaries.
+    Note that these are not reversible dead-ends but straight rails going out of map.
+    """
+    env_no_dead_end = create_dummy_env_dead_end(0)
+    # replace obs conv
+    env_no_dead_end.observation_conversion_dict['train_move'] = GraphDirectionalObservationConversion(True)
+    env_no_dead_end.seed(1234)
+    dict_obs_no_dead_end = env_no_dead_end.observation_conversion.convert_to_dict(env_no_dead_end.reset())
+    # check that single dead end cannot reach the target when going to dead-end
+    assert dict_obs_no_dead_end['F-L--distance'] == -1, f'Unexpected distance: {dict_obs_no_dead_end["F-L--distance"]}'
+    assert (
+        dict_obs_no_dead_end['F-L--target_dist'] == -1
+    ), f'Unexpected target distance: {dict_obs_no_dead_end["F-L--target_dist"]}'
+    assert dict_obs_no_dead_end['F-L--deadlock'] == 0

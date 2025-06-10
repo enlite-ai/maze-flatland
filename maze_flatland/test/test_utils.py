@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from flatland.core.grid.grid4 import Grid4TransitionsEnum
 from flatland.envs.step_utils.states import TrainState
 from maze_flatland.env.maze_action import FlatlandMazeAction
 
@@ -36,9 +37,10 @@ def check_if_equal(obj1: any, obj2: any, verbose: bool = False) -> bool:
 
     :param obj1: The first object instance.
     :param obj2: The second object instance.
+    :param verbose: [Default: False] Whether to provide a verbose output.
     """
     equivalent = True
-    if isinstance(obj1, TrainState):
+    if isinstance(obj1, (TrainState, Grid4TransitionsEnum)):
         equivalent = obj1 == obj2
     elif isinstance(obj1, np.random.RandomState):
         equivalent = _compare(obj1.get_state(), obj2.get_state(), verbose)

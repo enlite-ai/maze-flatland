@@ -30,6 +30,7 @@ from maze.core.utils.factory import CollectionOfConfigType, ConfigType
 from maze.core.wrappers.log_stats_wrapper import LogStatsWrapper
 from maze_flatland.env import events
 from maze_flatland.reward.default_flatland_v3 import ChallengeScore
+from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 
 
@@ -180,6 +181,9 @@ class ValidationRolloutRunner(RolloutRunner):
             if self.record_event_logs:
                 log_event_dir = f'./event_logs/round_{self.round}/test_{test_id}'
                 LogEventsWriterRegistry.register_writer(LogEventsWriterTSV(log_dir=log_event_dir))
+            if isinstance(self._cfg, DictConfig):
+                cfg_copy = OmegaConf.create(OmegaConf.to_container(self._cfg, resolve=False))
+                env_config, wrappers, agent = cfg_copy.env, cfg_copy.wrappers, cfg_copy.policy
             env_config, seeds = self.override_config(env_config, test_id)
             env, policy = RolloutRunner.init_env_and_agent(
                 env_config=env_config,

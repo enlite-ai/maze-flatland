@@ -68,7 +68,7 @@ class GreedyPolicy(Policy):
         train = maze_state.trains[train_id]
         is_train_done = train.is_done()
         # train will not depart if it cannot arrive.
-        if maze_state.trains[train_id].unsolvable:
+        if train.unsolvable:
             recommended_action = 0
         else:
             action_idx = np.asarray(

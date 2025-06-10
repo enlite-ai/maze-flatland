@@ -6,11 +6,14 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 from flatland.core.grid.grid4_utils import MOVEMENT_ARRAY
+from flatland.core.grid.rail_env_grid import RailEnvTransitionsEnum
+from flatland.envs.rail_env import RailEnv
 from flatland.envs.step_utils.states import TrainState
 from maze_flatland.env.backend_utils import (
     CELL_TYPE_SWITCH,
     get_cell_int_and_type,
     get_cell_int_for_pos,
+    get_transitions_map,
     identify_cell_type,
 )
 from maze_flatland.env.maze_action import FlatlandMazeAction
@@ -24,6 +27,7 @@ class TrainLogicMask:
     :param skip_decision: Boolean flag to skip the decision step.
     :param in_transition: Boolean flag to indicate that the agent is transitioning between two cells.
     :param possible_next_positions: List of tuple containing the possible next positions.
+    :param reverse_dir: Flag to indicate that the direction should be reversed.
     :param info: Additional information about the current mask.
     """
 
@@ -33,6 +37,7 @@ class TrainLogicMask:
         skip_decision: bool,
         in_transition: bool,
         possible_next_positions: any,
+        reverse_dir: bool,
         info: str | None = None,
     ):
         self.train_handle = handle
@@ -43,6 +48,8 @@ class TrainLogicMask:
         self.in_transition = in_transition
         # Whether stop should be included as an option.
         self.possible_next_positions = possible_next_positions
+        # Whether special allowance should be enabled to reverse the dir.
+        self.reverse_dir = reverse_dir
         self._info = info
 
     def explain(self) -> str:
@@ -64,16 +71,86 @@ class LogicMaskBuilderInterface(ABC):
     """Defines the interface class for the logic to build the mask."""
 
     @abstractmethod
-    def create_train_mask(self, train_state: MazeTrainState, transition_map: np.ndarray) -> TrainLogicMask:
+    def create_train_mask(self, train_state: MazeTrainState, rail_env: RailEnv) -> TrainLogicMask:
         """Create a mask based on the train status and the rail configuration.
 
         :param train_state: MazeTrainState object containing the state for a train.
-        :param transition_map: Rail configuration as a transition map.
+        :param rail_env: The rail environment.
 
         :return: TrainLogicMask object containing the logical mask.
         """
 
         raise NotImplementedError()
+
+
+def determine_skipping_based_on_state(train_state: MazeTrainState) -> TrainLogicMask | None:
+    """Evaluates the skipping condition based on the train state.
+    :param train_state: MazeTrainState object containing the state for a train.
+
+    :return: TrainLogicMask with the masking if the timestep should be skipped. None otherwise.
+    """
+    in_transition = False
+    skip_decision = False
+    possible_next_positions = []
+    reverse_dir = False
+    info = None
+    if train_state.in_transition:
+        in_transition = True
+        info = '\t\tTrain is transitioning.'
+    elif train_state.status in [TrainState.WAITING, TrainState.MALFUNCTION_OFF_MAP]:
+        # In case the train is out of map and not ready to depart.
+        skip_decision = True
+        info = '\t\tTrain is waiting or malfunctioning outside of map.'
+    elif train_state.is_done():
+        # In case the train is done already
+        skip_decision = True
+        info = '\t\tTrain is done already.'
+    elif train_state.deadlock:
+        # In case the train is dead
+        possible_next_positions = [train_state.position]
+        info = '\t\tTrain is in a deadlock.'
+    elif train_state.should_reverse_dir():
+        possible_next_positions = [train_state.position]
+        info = '\t\tTrain standing on a reversible dead-end.'
+        reverse_dir = True
+        # add flag.
+    if info is not None:
+        return TrainLogicMask(
+            train_state.handle, skip_decision, in_transition, possible_next_positions, reverse_dir, info
+        )
+    return None
+
+
+def build_mask_out_of_map(train_state: MazeTrainState) -> TrainLogicMask:
+    """Build the observation for a train out of map. E.g. Ready to depart.
+
+    :param train_state: MazeTrainState object containing the state for a train.
+    :return: TrainLogicMask object containing the logical mask.
+    """
+    ready_to_depart = train_state.status == TrainState.READY_TO_DEPART or (
+        train_state.status == TrainState.MALFUNCTION_OFF_MAP and train_state.malfunction_time_left <= 1
+    )
+    # env_time + travel_time + time_to_dispatch (1)
+    will_never_arrive = (
+        train_state.env_time + train_state.best_travel_time_to_target + 1 > train_state.max_episode_steps
+    )
+    possible_next_positions = []
+    skip_decision = True
+    if not ready_to_depart:
+        info = '\t\tTrain is waiting or malfunctioning outside of map.'
+    elif will_never_arrive:
+        info = '\t\tTravel time > time left.'
+    elif train_state.unsolvable:
+        info = '\t\tOrigin not connected to destination.'
+    else:
+        # can be put on map.
+        skip_decision = False
+        possible_next_positions = [
+            train_state.position,
+            train_state.actions_state[FlatlandMazeAction.GO_FORWARD].target_cell,
+        ]
+        info = '\t\tTrain can depart or hold.'
+    return TrainLogicMask(train_state.handle, skip_decision, False, possible_next_positions, False, info)
 
 
 class LogicMaskBuilder(LogicMaskBuilderInterface):
@@ -87,7 +164,7 @@ class LogicMaskBuilder(LogicMaskBuilderInterface):
         self.mask_out_dead_ends = mask_out_dead_ends
         self.disable_stop_on_switches = disable_stop_on_switches
 
-    def create_train_mask(self, train_state: MazeTrainState, transition_map: np.ndarray) -> TrainLogicMask:
+    def create_train_mask(self, train_state: MazeTrainState, rail_env: RailEnv) -> TrainLogicMask:
         """Creates a mask based on the current state of a train and the rail configuration.
             It determines the possible next positions and options for a train.
             Logic steps:
@@ -100,32 +177,20 @@ class LogicMaskBuilder(LogicMaskBuilderInterface):
                 directions leading to a path not connected to the train's target are removed.
 
         :param train_state: The current MazeTrainState for the given train.
-        :param transition_map: The transition map of the rail detailing its configuration.
+        :param rail_env: The rail environment.
 
         :return: TrainMask object containing the mask.
         """
+        # Extract transition map from the railEnv
+        transition_map = get_transitions_map(rail_env, rail_env.seed_history[-1])
+        # Evaluate mask based on the train state.
+        train_mask = determine_skipping_based_on_state(train_state)
+        if train_mask is not None:
+            return train_mask
 
-        in_transition = False
-        skip_decision = False
-        possible_next_positions = []
-        info = None
-        if train_state.in_transition:
-            in_transition = True
-            info = '\t\tTrain is transitioning.'
-        elif train_state.status in [TrainState.WAITING, TrainState.MALFUNCTION_OFF_MAP]:
-            # In case the train is out of map and not ready to depart.
-            skip_decision = True
-            info = '\t\tTrain is waiting or malfunctioning outside of map.'
-        elif train_state.is_done():
-            # In case the train is done already
-            skip_decision = True
-            info = '\t\tTrain is done already.'
-        elif train_state.deadlock:
-            # In case the train is dead
-            possible_next_positions = [train_state.position]
-            info = '\t\tTrain is in a deadlock.'
-        if info is not None:
-            return TrainLogicMask(train_state.handle, skip_decision, in_transition, possible_next_positions, info)
+        if train_state.has_not_yet_departed():
+            train_mask = build_mask_out_of_map(train_state)
+            return train_mask
 
         # get possible next positions excluding the current one
         possible_next_positions = list(
@@ -156,8 +221,10 @@ class LogicMaskBuilder(LogicMaskBuilderInterface):
             delta_pos = n_pos_before_removing_dead_ends - len(possible_next_positions)
             if delta_pos > 0:
                 info += f'\n\t\t[-] Removed {delta_pos} directions as considered as dead ends.'
-
-        return TrainLogicMask(train_state.handle, skip_decision, in_transition, possible_next_positions, info)
+        if len(possible_next_positions) == 0:
+            possible_next_positions.append(train_state.position)
+            info += '\n\t\tNo possible next positions. Stop action enabled.'
+        return TrainLogicMask(train_state.handle, False, False, possible_next_positions, False, info)
 
     @classmethod
     def _check_if_stop_action_should_be_added(
@@ -232,6 +299,7 @@ class LogicMaskBuilder(LogicMaskBuilderInterface):
         dead_end_positions = [
             FlatlandMazeAction.action_to_global_position(train.position, dead_action, train.direction)
             for dead_action in train.dead_ends
+            if not RailEnvTransitionsEnum.is_deadend(train.actions_state[dead_action])
         ]
         if len(dead_end_positions) > 0:
             possible_next_positions = list(set(possible_next_positions) - set(dead_end_positions))

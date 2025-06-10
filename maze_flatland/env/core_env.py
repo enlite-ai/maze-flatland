@@ -8,7 +8,7 @@ from __future__ import annotations
 import pickle
 import random
 import sys
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import flatland
 import flatland.envs.agent_utils
@@ -18,6 +18,8 @@ import flatland.envs.rail_env
 import flatland.envs.rail_generators
 import numpy as np
 from flatland.core.env_observation_builder import DummyObservationBuilder
+from flatland.envs import timetable_generators
+from flatland.envs.malfunction_generators import MalfunctionParameters, ParamMalfunctionGen
 from flatland.envs.step_utils.states import TrainState
 from maze.core.annotations import override
 from maze.core.env.action_conversion import ActionType
@@ -44,7 +46,7 @@ from maze_flatland.env.maze_state import FlatlandMazeState, MazeTrainState
 from maze_flatland.env.renderer import FlatlandRendererBase
 from maze_flatland.env.termination_condition import BaseEarlyTermination, EarlyTerminationCondition
 from maze_flatland.reward.flatland_reward import FlatlandReward
-from omegaconf import ListConfig
+from omegaconf import DictConfig, ListConfig
 
 MCTS_NODE_PREFIX_IDENTIFIER = 'mcts_node_info--'
 
@@ -77,6 +79,7 @@ class FlatlandCoreEnvironment(CoreEnv):
     :param malfunction_generator: Generator for train malfunctions.
     :param line_generator: Generator for train schedules (including speeds).
     :param rail_generator: Generator for rail network.
+    :param timetable_generator: Generator for timetable or None. If None then uses the default random generator.
     :param termination_conditions: List of termination conditions.
     :param renderer: Renderer used to render the maze-flatland environment.
     :param include_maze_state_in_serialization: [Default: True] Whether to include the maze state in the serialization.
@@ -87,11 +90,13 @@ class FlatlandCoreEnvironment(CoreEnv):
     factories = {
         ctype: Factory(base_type=ctype)
         for ctype in (
+            Callable,  # to support init of pre-stored environment.
             FlatlandReward,
-            flatland.envs.malfunction_generators.ParamMalfunctionGen,
+            ParamMalfunctionGen,
             flatland.envs.line_generators.BaseLineGen,
             flatland.envs.rail_generators.RailGen,
             FlatlandRendererBase,
+            timetable_generators.FileTimetableGenerator,
         )
     }
 
@@ -101,9 +106,10 @@ class FlatlandCoreEnvironment(CoreEnv):
         map_height: int,
         n_trains: int,
         reward_aggregator: Union[FlatlandReward, ConfigType],
-        malfunction_generator: Union[flatland.envs.malfunction_generators.ParamMalfunctionGen, ConfigType],
-        line_generator: Union[flatland.envs.line_generators.BaseLineGen, ConfigType],
-        rail_generator: Union[flatland.envs.rail_generators.RailGen, ConfigType],
+        malfunction_generator: Union[ParamMalfunctionGen, ConfigType],
+        line_generator: Union[flatland.envs.line_generators.BaseLineGen, ConfigType, Callable],
+        rail_generator: Union[flatland.envs.rail_generators.RailGen, ConfigType, Callable],
+        timetable_generator: Union[timetable_generators.FileTimetableGenerator, ConfigType, Callable, None],
         termination_conditions: Union[EarlyTerminationCondition, list[Union[EarlyTerminationCondition, ConfigType]]],
         renderer: Union[FlatlandRendererBase, ConfigType],
         include_maze_state_in_serialization: bool = True,
@@ -127,11 +133,19 @@ class FlatlandCoreEnvironment(CoreEnv):
 
         # Instantiate complex objects.
         self._reward_aggregator = self._init_reward_aggregator(reward_aggregator)
-        self._malfunction_generator = self.factories[
-            flatland.envs.malfunction_generators.ParamMalfunctionGen
-        ].instantiate(malfunction_generator)
-        self._line_generator = self.factories[flatland.envs.line_generators.BaseLineGen].instantiate(line_generator)
-        self._rail_generator = self.factories[flatland.envs.rail_generators.RailGen].instantiate(rail_generator)
+        self._malfunction_generator = self._init_malfunction_generator(malfunction_generator)
+        self._line_generator = self.factories[
+            Callable if callable(line_generator) else flatland.envs.line_generators.BaseLineGen
+        ].instantiate(line_generator)
+        self._rail_generator = self.factories[
+            Callable if callable(rail_generator) else flatland.envs.rail_generators.RailGen
+        ].instantiate(rail_generator)
+        if timetable_generator is None:
+            self._timetable_generator = timetable_generators.timetable_generator
+        else:
+            self._timetable_generator = self.factories[
+                Callable if callable(timetable_generator) else timetable_generators.FileTimetableGenerator
+            ].instantiate(timetable_generator)
         # Set up environment.
         (
             self._move_event_recorder,
@@ -167,6 +181,21 @@ class FlatlandCoreEnvironment(CoreEnv):
         assert any(
             isinstance(tc, BaseEarlyTermination) for tc in self.termination_conditions
         ), 'Base termination conditions not found.'
+
+    def _init_malfunction_generator(self, malf_gen_config: DictConfig | MalfunctionParameters) -> ParamMalfunctionGen:
+        """Helper function to initialize a malfunction generator.
+
+        :param malf_gen_config: DictConfig holding the configuration file or MalfunctionParameters.
+        :return: Instance of ParamMalfunctionGen.
+        """
+        if isinstance(malf_gen_config, DictConfig):
+            config = {**malf_gen_config}
+            assert 'parameters' in config, f'Missing parameters key in config: {config}.'
+            config['parameters'] = MalfunctionParameters(**malf_gen_config['parameters'])
+        else:
+            config = malf_gen_config
+        malf_gen = self.factories[ParamMalfunctionGen].instantiate(config)
+        return malf_gen
 
     def _init_reward_aggregator(self, reward_aggregator: Union[FlatlandReward, ConfigType]) -> FlatlandReward:
         """
@@ -211,6 +240,7 @@ class FlatlandCoreEnvironment(CoreEnv):
             malfunction_generator=self._malfunction_generator,
             line_generator=self._line_generator,
             obs_builder_object=DummyObservationBuilder(),  # dummy obs builder to save computation
+            timetable_generator=self._timetable_generator,
         )
         rail_env.reset(random_seed=self._random_seed)
 
@@ -232,6 +262,9 @@ class FlatlandCoreEnvironment(CoreEnv):
         Implementation of :py:meth:`~maze.core.env.core_env.CoreEnv.step`.
         Note that we expect the action to describe a directive for the single, currently active agent/train.
         """
+        if self._current_train_id == 0:
+            # Reset actions
+            self._actions = {}
         renv = self._rail_env
         self._actions[self._current_train_id] = maze_action
         if maze_action != maze_action.DO_NOTHING:
@@ -269,9 +302,6 @@ class FlatlandCoreEnvironment(CoreEnv):
 
             # Log events (before calculating the reward)
             self.log_flat_step_events()
-
-            # Reset actions after stepping wrapped Flatland environment.
-            self._actions = {}
             agent_rewards = self._reward_aggregator.summarize_reward(self._current_maze_state)
         else:
             agent_rewards = np.zeros((renv.number_of_agents,))
@@ -322,16 +352,18 @@ class FlatlandCoreEnvironment(CoreEnv):
         """
         Implementation of :py:meth:`~maze.core.env.core_env.CoreEnv.reset`.
         """
+        # Reset environment.
+        self._actions = {}
+        self._rail_env.reset(regenerate_rail=True, regenerate_schedule=True, random_seed=self._random_seed)
+
         # override local params due to reset
+        self.n_trains = self._rail_env.number_of_agents
         self._current_train_id = 0
         self._actions: dict[int, FlatlandMazeAction] = {}
         self._last_modifying_actions: dict[int, FlatlandMazeAction] = {
             i: FlatlandMazeAction.STOP_MOVING for i in range(self.n_trains)
         }
 
-        # Reset environment.
-        self._actions = {}
-        self._rail_env.reset(regenerate_rail=True, regenerate_schedule=True, random_seed=self._random_seed)
         # Hard reset of predictor.
         self._rail_env.dev_pred_dict = {}
         self._current_maze_state = None
@@ -365,6 +397,7 @@ class FlatlandCoreEnvironment(CoreEnv):
         if self.rail_env.malfunction_generator._rand_idx != 0:
             self.rail_env.malfunction_generator._rand_idx = 0
             self.rail_env.malfunction_generator._cached_rand = None
+            self.rail_env.malfunction_generator._cached_broken = None
 
         self._rail_env_rnd_state_for_malfunctions = self._rail_env.np_random.get_state()
 
@@ -468,7 +501,8 @@ class FlatlandCoreEnvironment(CoreEnv):
         It decouples the serialization of the backend from the core_env.
         :return: A list of essential parameters needed to be cloned.
         """
-        return [
+
+        serialized_renv = [
             self.rail_env.agents,
             self.rail_env.np_random.get_state(),
             self.rail_env._elapsed_steps,
@@ -482,17 +516,24 @@ class FlatlandCoreEnvironment(CoreEnv):
             self.rail_env.distance_map.distance_map,
             self.rail_env.distance_map.agents_previous_computation,
             self.rail_env.malfunction_generator.MFP,
+            self.rail_env.malfunction_generator._malfunction_prob,
             self._rail_env_rnd_state_for_malfunctions,
             self.rail_env.malfunction_generator._rand_idx,
+            self.rail_env.timetable_generator,
+            [a.speed_counter.is_cell_entry for a in self.rail_env.agents],  # should be fixed with v > 4.1.0
             self.rail_env.malfunction_generator._cached_rand is not None,
         ]
+        # should be fixed in v > 4.1.0
+        return serialized_renv
 
     @override(SimulatedEnvMixin)
     def serialize_state(self) -> bytes:
         """Serialize the current env state and return an object that can be used to deserialize the env again.
         The returned (serialised) object is a triple | (core_env_params, rail_env_params, reward_params).
         """
-        assert not self._current_maze_state.terminate_episode, 'Never serialize a state that results in done.'
+        assert (
+            self._current_maze_state is None or not self._current_maze_state.terminate_episode
+        ), 'Never serialize a state that results in done.'
         core_env_param = (
             self._current_train_id,
             self._last_modifying_actions,
@@ -505,7 +546,6 @@ class FlatlandCoreEnvironment(CoreEnv):
         )
         renv_params = self._serialize_rail_env()
         reward_params = self._reward_aggregator.serialize_state()
-
         if self._include_maze_state_in_serialization:
             core_env_param += (self._current_maze_state,)
 
@@ -516,7 +556,6 @@ class FlatlandCoreEnvironment(CoreEnv):
         """Deserialize the current env from the given env state
         :param serialised_state: the serialised state to be restored in the current environment.
         """
-        old_renv_seed = self.rail_env.random_seed
         core_env_state, renv_state, reward_state = pickle.loads(serialised_state)
         self._current_train_id = core_env_state[0]
         self._last_modifying_actions = core_env_state[1]
@@ -530,9 +569,7 @@ class FlatlandCoreEnvironment(CoreEnv):
         # end of core env params.
         self._reward_aggregator.deserialize_state(reward_state)
         self._deserialize_rail_env(renv_state)
-        # if different seed then different rail topology, re-compute the transition map and store it in cache.
-        if self._random_seed != old_renv_seed:
-            _ = get_transitions_map(self.rail_env, use_cached=False)
+        _ = get_transitions_map(self.rail_env, self._random_seed)
         # As last step, restore/recompute the maze_state
         if self._include_maze_state_in_serialization:
             self._current_maze_state = core_env_state[-1]
@@ -572,13 +609,19 @@ class FlatlandCoreEnvironment(CoreEnv):
         self._rail_env.distance_map.agents_previous_computation = serialised_rail_env[11]
         # deserialize MFP
         self._rail_env.malfunction_generator.MFP = serialised_rail_env[12]
+        self._rail_env.malfunction_generator._malfunction_prob = serialised_rail_env[13]
         # borrow rnd generator and seed it with the state used to generate malfunctions data.
-        self._rail_env_rnd_state_for_malfunctions = serialised_rail_env[13]
+        self._rail_env_rnd_state_for_malfunctions = serialised_rail_env[14]
         self._rail_env.malfunction_generator._cached_rand = None
         if serialised_rail_env[-1]:
             self._rail_env.np_random.set_state(self._rail_env_rnd_state_for_malfunctions)
             self._rail_env.malfunction_generator.generate_rand_numbers(self._rail_env.np_random)
-        self._rail_env.malfunction_generator._rand_idx = serialised_rail_env[14]
+            self._rail_env.malfunction_generator._cached_broken = None
+        self._rail_env.malfunction_generator._rand_idx = serialised_rail_env[15]
+        self.rail_env.timetable_generator = serialised_rail_env[16]
+        # override cell_entries with correct value.
+        for agent, cell_entry in zip(self.rail_env.agents, serialised_rail_env[-2]):
+            agent.speed_counter._is_cell_entry = cell_entry
 
         # restore the true rnd generator
         self._rail_env.np_random.set_state(serialised_rail_env[1])

@@ -11,7 +11,27 @@ from maze_flatland.env.maze_env import FlatlandEnvironment
 from maze_flatland.env.maze_state import _node_visited_status, cycling_block_identifier, detect_blocks_and_obstructions
 from maze_flatland.space_interfaces.action_conversion.directional import DirectionalAC
 from maze_flatland.space_interfaces.observation_conversion.positional import PositionalObservationConversion
-from maze_flatland.test.env_instantation import create_core_env
+from maze_flatland.test.env.test_dead_end_behavior import go_to_dead_end
+from maze_flatland.test.env_instantation import create_core_env, create_dummy_env_dead_end
+
+
+def run_dummy_cyclic_block_identifier(n_trains: int, node_relations: dict[int : list[int]]) -> list[int]:
+    """Iterates through the trains to identify the deadlocks.
+
+    :param n_trains: Number of trains.
+    :param node_relations: Trains block-by relations.
+
+    :return: list[int] trains in deadlock."""
+    deadlocks = []
+    node_visited = [_node_visited_status.NOT_VISITED for _ in range(n_trains)]
+    for tid in range(n_trains):
+        node_status = cycling_block_identifier(tid, node_visited, node_relations)
+        assert node_status != _node_visited_status.FULLY_VISITED, (
+            f'FULLY_VISITED for train {tid} ' f'should be resolved through propagation.'
+        )
+        if node_status == _node_visited_status.DEAD:
+            deadlocks.append(tid)
+    return deadlocks
 
 
 def _generate_test_env() -> FlatlandEnvironment:
@@ -104,56 +124,6 @@ def test_flatland_no_deadlocks():
     blocks = env.observation_conversion.maze_to_space(env.get_maze_state())['train_blocks']
 
     assert (blocks == [[0, 0, 0], [0, 0, 0], [1, 0, 0]]).all()
-
-
-def test_cycling_block_identified_ms():
-    def run_dummy_cyclic_block_identifier(n_trains: int, node_relations: dict[int : list[int]]):
-        deadlocks = []
-        node_visited = [_node_visited_status.NOT_VISITED for _ in range(n_trains)]
-        for tid in range(n_trains):
-            if cycling_block_identifier(tid, node_visited, node_relations):
-                deadlocks.append(tid)
-        return deadlocks
-
-    def simple_deadlock_case():
-        """Simple test on cycling blocks."""
-        n_trains = 3
-        node_relations = {0: [1], 1: [2], 2: [0]}
-        assert [0, 1, 2] == (run_dummy_cyclic_block_identifier(n_trains, node_relations))
-
-    def simple_non_deadlock_case():
-        """Simple test on cycling blocks.
-        No deadlock as 2 could move as soon as 3 (which is not blocked) moves out.
-        """
-        n_trains = 4
-        node_relations = {0: [1], 1: [2], 2: [0, 3]}
-        assert not run_dummy_cyclic_block_identifier(n_trains, node_relations)
-
-    def complex_case_with_deadlock():
-        """Test complex case with deadlocks."""
-        n_trains = 30
-        expected_trains_dead = [0, 11, 13, 14, 21, 23, 25, 27, 28, 29]
-        node_relations = {
-            0: [27],
-            2: [24],
-            7: [2],
-            11: [29, 23],
-            13: [21],
-            14: [29],
-            19: [7],
-            21: [23],
-            23: [11],
-            25: [13],
-            27: [0, 21],
-            28: [14],
-            29: [11, 14],
-        }
-        trains_dead = run_dummy_cyclic_block_identifier(n_trains, node_relations)
-        assert sorted(trains_dead) == sorted(expected_trains_dead)
-
-    simple_deadlock_case()
-    simple_non_deadlock_case()
-    complex_case_with_deadlock()
 
 
 # pylint: disable=too-many-statements
@@ -323,3 +293,115 @@ def test_blocks_based_on_status():
     test_out_of_map_no_create_obstruction(TrainState.READY_TO_DEPART, TrainState.WAITING, TrainState.MOVING)
     test_out_of_map_no_create_obstruction(TrainState.MALFUNCTION_OFF_MAP, TrainState.DONE, TrainState.MALFUNCTION)
     test_out_of_map_no_create_obstruction(TrainState.READY_TO_DEPART, TrainState.WAITING, TrainState.STOPPED)
+
+
+def test_simple_deadlock_case():
+    """Simple test on cycling blocks."""
+    n_trains = 3
+    node_relations = {0: [1], 1: [2], 2: [0]}
+    assert [0, 1, 2] == (run_dummy_cyclic_block_identifier(n_trains, node_relations))
+
+
+def test_simple_non_deadlock_case():
+    """Simple test on cycling blocks.
+    No deadlock as 2 could move as soon as 3 (which is not blocked) moves out.
+    """
+    n_trains = 4
+    node_relations = {0: [1], 1: [2], 2: [0, 3]}
+    assert not run_dummy_cyclic_block_identifier(n_trains, node_relations)
+
+
+def test_complex_case_with_deadlock():
+    """Test complex case with deadlocks."""
+    n_trains = 30
+    expected_trains_dead = [0, 11, 13, 14, 21, 23, 25, 27, 28, 29]
+    node_relations = {
+        0: [27],
+        2: [24],
+        7: [2],
+        11: [29, 23],
+        13: [21],
+        14: [29],
+        19: [7],
+        21: [23],
+        23: [11],
+        25: [13],
+        27: [0, 21],
+        28: [14],
+        29: [11, 14],
+    }
+    trains_dead = run_dummy_cyclic_block_identifier(n_trains, node_relations)
+    assert sorted(trains_dead) == sorted(expected_trains_dead)
+
+
+def test_train_blocked_not_dead_greater_index():
+    """Text case where a train is blocked by two trains and only one of them can move to resolve the deadlocks."""
+    node_relations = {0: [2, 1], 2: [0]}
+    trains_dead = run_dummy_cyclic_block_identifier(3, node_relations)
+    assert len(trains_dead) == 0
+
+
+def test_train_blocked_not_dead_smaller_index():
+    """Text case where a train is blocked by two trains and only one of them can move to resolve the deadlocks."""
+    node_relations = {2: [0, 1], 0: [2]}
+    trains_dead = run_dummy_cyclic_block_identifier(3, node_relations)
+    assert len(trains_dead) == 0
+
+
+def test_mixed_deadlock_case():
+    """Test a mixed scenario.
+
+    - Trains 4, 6 and 8 are in a circular deadlock 6->8->4->6
+    - Trains 0, 1, and 2 form a cycle but train 2 points to 3 which is not blocked.
+        Therefore, no deadlock.
+    """
+    n_trains = 9
+    node_relations = {
+        6: [8],
+        8: [4],
+        4: [6],  # Deadlock cycle: 6->8->4->6
+        0: [1],
+        1: [2, 0],
+        2: [0, 3],  # Safe cycle: 0->1->2->0 With escape via 3
+    }
+    expected_dead = [4, 6, 8]
+    trains_dead = run_dummy_cyclic_block_identifier(n_trains, node_relations)
+    assert sorted(trains_dead) == expected_dead
+
+
+def test_chain_no_deadlock():
+    """Test a case where a chain needs to be expanded to conclude that all trains are safe."""
+    node_relations = {4: [2, 5], 5: [4], 6: [1], 7: [3], 8: [5], 9: [6]}
+    trains_dead = run_dummy_cyclic_block_identifier(10, node_relations)
+    assert len(trains_dead) == 0
+
+
+def test_deadlock_propagation_partially_fully_visited():
+    """Test a case where 0 and 4 are correctly identified as deadlock
+    but 8 yet to decide as it is fully visited.
+    8 should be recognised deadlock at propagation time.
+    """
+    node_relations = {0: [8, 4], 3: [8], 4: [9], 8: [0], 9: [4]}
+    trains_dead = run_dummy_cyclic_block_identifier(10, node_relations)
+    assert sorted(trains_dead) == [0, 3, 4, 8, 9]
+
+
+def test_nested_chain_double_visit():
+    """Complex case where a chain is expanded deeply and a fully_visited node (5)
+    is evaluated twice by the same chain (first by 4 and then by 7).
+    """
+    node_relations = {0: [4], 1: [4, 7], 4: [5, 1], 5: [4], 7: [5]}
+    trains_dead = run_dummy_cyclic_block_identifier(10, node_relations)
+    assert sorted(trains_dead) == [0, 1, 4, 5, 7]
+
+
+def test_not_blocked_facing_dead_end():
+    """Simple case where a single train faces a dead-end and its status should not be blocked as
+    there is no train obstructing it.
+    """
+    env = create_dummy_env_dead_end(1)
+    go_to_dead_end(env)
+    assert not env.get_maze_state().current_train().is_block
+    obs, _, done, _ = env.step({'train_move': 4})  # do the stop action
+    train_state = env.get_maze_state().current_train()
+    assert not train_state.is_block
