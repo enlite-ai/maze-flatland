@@ -16,6 +16,7 @@ dependencies:
       - torch-scatter
       - hydra-nevergrad-sweeper==1.3.0.dev0
       - gymnasium
+      - maze-rl==0.2.2
       # testing dependencies
       - pre-commit
       - pytest

@@ -40,7 +40,6 @@ def create_core_env(
     n_cities: int,
     malfunction_rate: float,
     speed_ratio_map: dict[float, float],
-    include_maze_state_in_serialization: bool = False,
     max_rails_between_cities: int = 3,
     max_rail_pairs_in_city: int = 3,
     reward_aggregator: FlatlandReward = ConstantReward(value=-1),
@@ -54,7 +53,6 @@ def create_core_env(
     :param n_cities: Number of cities.
     :param malfunction_rate: Malfunction rate.
     :param speed_ratio_map: Ratios per speed values for trains.
-    :param include_maze_state_in_serialization: Whether to include maze state in serialization. Default: False
     :param max_rails_between_cities: Maximum number of rails between cities.
     :param max_rail_pairs_in_city: Maximum number of rails between pairs of cities.
     :param reward_aggregator: Reward aggregator to be used. Default: ConstantReward.
@@ -79,7 +77,6 @@ def create_core_env(
             max_rail_pairs_in_city=max_rail_pairs_in_city,
         ),
         timetable_generator=None,
-        include_maze_state_in_serialization=include_maze_state_in_serialization,
         termination_conditions=BaseEarlyTermination(),
         renderer=FlatlandRendererBase(1000, AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX, False, False),
     )
@@ -148,7 +145,6 @@ def create_dummy_env_dead_end(n_dead_ends: int) -> FlatlandEnvironment:
         timetable_generator_from_timetable(timetable),
         NoEarlyTermination(),
         FlatlandRendererBase(1000, AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX, False, False),
-        False,
     )
     return FlatlandEnvironment(
         core_env=core_env,

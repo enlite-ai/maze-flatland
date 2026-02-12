@@ -11,7 +11,6 @@ import flatland
 import flatland.core.grid.grid4_utils
 import flatland.envs.agent_utils
 import flatland.envs.observations
-import flatland.envs.rail_env
 import numpy as np
 from flatland.core.grid.rail_env_grid import RailEnvTransitionsEnum
 from flatland.envs.agent_utils import TrainState
@@ -500,18 +499,60 @@ class FlatlandMazeState:
         last_modifying_actions_per_train: dict[int, FlatlandMazeAction],
         rail_env: flatland.envs.rail_env.RailEnv,
     ):
+        self.trains = []
+        self.action_masks = []
+        self.current_train_id = None
+        self.terminate_episode = False
+        self.map_size = (rail_env.height, rail_env.width)
+        self.reset_maze_state(current_train_id, last_modifying_actions_per_train, rail_env)
+
+    def reset_maze_state(
+        self,
+        current_train_id: int,
+        last_modifying_actions_per_train: dict[int, FlatlandMazeAction],
+        rail_env: flatland.envs.rail_env.RailEnv,
+    ):
+        """Helper method to reset the maze_state.
+
+        :param current_train_id: ID of currently active train.
+        :param last_modifying_actions_per_train: Last modifying actions per train (i.e. without DO_NOTHING).
+        :param rail_env: Flatland's RailEnv.
+        """
+
         self.trains = [
             MazeTrainState(idx, last_action, rail_env) for idx, last_action in last_modifying_actions_per_train.items()
         ]
         # Filled afterward if needed.
         self.action_masks = []
-
         self.current_train_id = current_train_id
         # update the blocks and deadlocks fields.
 
         detect_deadlocks(self.trains)
         self.terminate_episode = False
         self.map_size = (rail_env.height, rail_env.width)
+
+    def update_maze_state(
+        self,
+        current_train_id: int,
+        last_modifying_actions_per_train: dict[int, FlatlandMazeAction],
+        rail_env: flatland.envs.rail_env.RailEnv,
+    ):
+        """Updates the maze state based on the given data while maintaining the reference to the same object.
+
+        :param current_train_id: ID of currently active train.
+        :param last_modifying_actions_per_train: Last modifying actions per train (i.e. without DO_NOTHING).
+        :param rail_env: Flatland's RailEnv.
+        """
+
+        if current_train_id == 0:
+            # reset maze state
+            self.reset_maze_state(current_train_id, last_modifying_actions_per_train, rail_env)
+        else:
+            # Update current state
+            self.current_train_id = current_train_id
+            self.trains[self.current_train_id - 1].last_action = last_modifying_actions_per_train[
+                self.current_train_id - 1
+            ]
 
     @property
     def env_time(self):
@@ -555,3 +596,14 @@ class FlatlandMazeState:
         :return: The current mask.
         """
         return self.action_masks[self.current_train_id]
+
+    def serialize(self) -> list[Any]:
+        """Return the current state as a list.
+
+        :return: The current state as a list.
+        """
+        return [self.trains, self.action_masks, self.current_train_id, self.terminate_episode, self.map_size]
+
+    def deserialize(self, state: list[Any]) -> None:
+        """Initialize the current state from a list."""
+        self.trains, self.action_masks, self.current_train_id, self.terminate_episode, self.map_size = state

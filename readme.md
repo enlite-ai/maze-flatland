@@ -57,10 +57,6 @@ conda activate maze-flatland
 pip install -e .
 ```
 > **Note:** the editable mode (`-e`) option is essential to facilitate the modification and creation of new experiment (`yaml`) files without re-installing.
-- Install **maze-rl** library
-```bash
-pip install git+https://github.com/enlite-ai/maze.git@dev
-```
 
 ### Test the installation
 Run a rollout with a greedy policy:

@@ -61,6 +61,6 @@ parser.add_argument('--input_dir', type=str)
 if __name__ == '__main__':
     args = parser.parse_args()
     input_dir = args.input_dir
-    assert os.path.isdir(input_dir)
+    assert os.path.isdir(input_dir), f'not a dir: {input_dir}'
     output_dir = os.path.join(input_dir, 'aggregated/')
     aggregate_trajectories_by_n_trains(input_dir, output_dir)

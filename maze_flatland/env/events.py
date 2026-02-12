@@ -7,7 +7,15 @@ from __future__ import annotations
 import abc
 
 import numpy as np
-from maze.core.log_stats.event_decorators import define_episode_stats, define_epoch_stats, define_step_stats
+from maze.core.log_events.log_create_figure_functions import create_categorical_plot
+from maze.core.log_stats.event_decorators import (
+    define_episode_stats,
+    define_epoch_stats,
+    define_plot,
+    define_stats_grouping,
+    define_step_stats,
+)
+from maze.core.log_stats.reducer_functions import histogram
 
 
 class TrainMovementEvents(abc.ABC):
@@ -185,3 +193,23 @@ class FlatlandDepartingEvents(abc.ABC):
     @define_step_stats(np.mean)
     def departure_delay(self, norm_delay: float):
         """Record the normalised delay."""
+
+    @define_plot(create_figure_function=create_categorical_plot, input_name=None)
+    @define_epoch_stats(histogram)
+    @define_episode_stats(histogram)
+    @define_step_stats(histogram)
+    def departure_norm_hist(self, value: float):
+        """The normed departure time between earliest and latest departure [0,1]"""
+
+    @define_epoch_stats(np.mean, output_name='mean_ratio')
+    @define_episode_stats(np.mean)
+    @define_step_stats(histogram)
+    def departure_normed(self, value: float):
+        """The normed departure time between earliest and latest departure [0,1]"""
+
+    @define_epoch_stats(np.mean, output_name='mean_ratio')
+    @define_episode_stats(np.mean)
+    @define_step_stats(None)
+    @define_stats_grouping('step_key', 'agent_id')
+    def departure_normed_by_agent(self, step_key: str, agent_id: str, value: float):
+        """The normed departure time between earliest and latest departure [0,1]"""

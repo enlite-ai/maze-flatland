@@ -17,7 +17,7 @@ def generate_core_env(reward_aggregator: FlatlandReward) -> FlatlandCoreEnvironm
     :return: FlatlandCoreEnvironment instance.
     """
 
-    return create_core_env(1, 30, 30, 2, 1 / 1000, {1: 1, 0.5: 0}, False, reward_aggregator=reward_aggregator)
+    return create_core_env(1, 30, 30, 2, 1 / 1000, {1: 1, 0.5: 0}, reward_aggregator=reward_aggregator)
 
 
 def _step_the_environment(env: FlatlandCoreEnvironment):

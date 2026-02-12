@@ -17,7 +17,7 @@ def run_env() -> tuple[FlatlandEnvironment, list[ObservationType]]:
     :return: Small test environment, list of collected observations.
     """
 
-    core_env = create_core_env(2, 30, 30, 2, 0, {1: 1}, False, 4, 4)
+    core_env = create_core_env(2, 30, 30, 2, 0, {1: 1}, 4, 4)
 
     env = FlatlandEnvironment(
         core_env,

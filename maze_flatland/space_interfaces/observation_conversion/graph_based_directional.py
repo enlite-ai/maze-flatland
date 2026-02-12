@@ -69,6 +69,16 @@ class GraphDirectionalObservationConversion(BaseObservationConversion):
         self.current_obs = None
         self._spaces = self._spaces
         self._observation_representation = self._observation_representation
+        self.last_timestep = None
+
+    def clean_cached_obs(self, maze_state: FlatlandMazeState) -> None:
+        """Clean the cached observations if out of time and update the time.
+
+        :param maze_state: The current maze_state.
+        """
+        if self.last_timestep != maze_state.env_time:
+            self._observation_representation = []
+            self.last_timestep = maze_state.env_time
 
     @override(BaseObservationConversion)
     def maze_to_space(self, maze_state: FlatlandMazeState) -> ObservationType:
@@ -76,7 +86,8 @@ class GraphDirectionalObservationConversion(BaseObservationConversion):
         See :py:meth:`base_observation_conversion.ObservationConversion.maze_to_space` and
         :py:meth: 'positional_observation_conversion.ObservationConversion.maze_to_space'.
         """
-        if len(self._observation_representation) == 0 or maze_state.current_train_id == 0:
+        self.clean_cached_obs(maze_state)
+        if len(self._observation_representation) == 0:
             self.update_obs_builder(maze_state)
         super().maze_to_space(maze_state)
         self.current_obs = self.pop_observation_representation()[TreeSwitchObsRailEnv][1]
@@ -113,6 +124,7 @@ class GraphDirectionalObservationConversion(BaseObservationConversion):
                 'observation': gym.spaces.Box(shape=(86,), low=-1, high=np.prod(self.map_size), dtype=np.float32),
             }
         )
+        self.last_timestep = core_env.get_env_time()
 
     def space(self) -> gym.spaces.Dict:
         """

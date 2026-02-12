@@ -82,7 +82,6 @@ class FlatlandCoreEnvironment(CoreEnv):
     :param timetable_generator: Generator for timetable or None. If None then uses the default random generator.
     :param termination_conditions: List of termination conditions.
     :param renderer: Renderer used to render the maze-flatland environment.
-    :param include_maze_state_in_serialization: [Default: True] Whether to include the maze state in the serialization.
 
     """
 
@@ -112,7 +111,6 @@ class FlatlandCoreEnvironment(CoreEnv):
         timetable_generator: Union[timetable_generators.FileTimetableGenerator, ConfigType, Callable, None],
         termination_conditions: Union[EarlyTerminationCondition, list[Union[EarlyTerminationCondition, ConfigType]]],
         renderer: Union[FlatlandRendererBase, ConfigType],
-        include_maze_state_in_serialization: bool = True,
     ):
         super().__init__()
         self._previous_best_target_distances = [None for _ in range(n_trains)]
@@ -164,7 +162,7 @@ class FlatlandCoreEnvironment(CoreEnv):
 
         # Initial current maze state.
         self._current_maze_state = None
-        self._include_maze_state_in_serialization = include_maze_state_in_serialization
+        self._min_ts_before_step = None
 
         self._is_cloned = False
         self._rail_env_rnd_state_for_malfunctions = None
@@ -276,18 +274,15 @@ class FlatlandCoreEnvironment(CoreEnv):
         if len(self._actions) == renv.number_of_agents:
             if renv.number_of_agents > 1:
                 self.context.increment_env_step()
+            self._min_ts_before_step = {
+                train.handle: train.best_travel_time_to_target for train in self._current_maze_state.trains
+            }
             observations, _, _, info = self._rail_env.step({aid: self._actions[aid].value for aid in self._actions})
 
             # Reset current train ID to first one.
             self._current_train_id = 0
-
-            # Get current state after stepping the backend
-            self._current_maze_state = FlatlandMazeState(
-                self._current_train_id,
-                self._last_modifying_actions,
-                self._rail_env,
-            )
-
+            # update maze state
+            self.update_maze_state()
             # Check if any train has departed and if so, record the event.
             for ts in self._current_maze_state.trains:
                 # If already departed then skip it.
@@ -296,10 +291,6 @@ class FlatlandCoreEnvironment(CoreEnv):
                 if ts.is_on_map():
                     self._record_departure_events(ts)
 
-            # check for env can be terminated (early termination or all trains arrived)
-            # (after calculating the new state)
-            self._current_maze_state.terminate_episode = self._check_for_termination()
-
             # Log events (before calculating the reward)
             self.log_flat_step_events()
             agent_rewards = self._reward_aggregator.summarize_reward(self._current_maze_state)
@@ -307,12 +298,8 @@ class FlatlandCoreEnvironment(CoreEnv):
             agent_rewards = np.zeros((renv.number_of_agents,))
             info = {}
             self._current_train_id += 1
-
-            # Update current state
-            self._current_maze_state.current_train_id = self._current_train_id
-            self._current_maze_state.trains[self._current_train_id - 1].last_action = self._actions[
-                self._current_train_id - 1
-            ]
+            # update maze state
+            self.update_maze_state()
 
         # Summarise reward
         scalar_reward = self._reward_aggregator.to_scalar_reward(agent_rewards)
@@ -366,24 +353,17 @@ class FlatlandCoreEnvironment(CoreEnv):
 
         # Hard reset of predictor.
         self._rail_env.dev_pred_dict = {}
-        self._current_maze_state = None
 
         self._renderer.reset()
 
-        self._current_maze_state = FlatlandMazeState(
-            self._current_train_id,
-            self._last_modifying_actions,
-            self._rail_env,
-        )
+        # create maze state
+        self._current_maze_state = self.init_maze_state()
 
         self._previous_best_target_distances = []
         for train in self._current_maze_state.trains:
             self._previous_best_target_distances.append(
                 np.nan_to_num(train.target_distance, posinf=np.prod(self._current_maze_state.map_size) + 1)
             )
-
-        self._current_maze_state.terminate_episode = self._check_for_termination()
-
         self._schedule_events.impossible_dest(
             sum(train.unsolvable for train in self._current_maze_state.trains) / self.n_trains
         )
@@ -401,7 +381,16 @@ class FlatlandCoreEnvironment(CoreEnv):
 
         self._rail_env_rnd_state_for_malfunctions = self._rail_env.np_random.get_state()
 
-        self.departing_stats = {'asap': 0, 'in_time': 0, 'delay': 0, 'trains_departed': np.zeros(self.n_trains)}
+        self.departing_stats = {
+            'asap': 0,
+            'in_time': 0,
+            'delay': 0,
+            'trains_departed': np.zeros(self.n_trains),
+            'trains_depart_time': np.zeros(self.n_trains),
+            'latest_departure': [
+                train.max_episode_steps - train.best_travel_time_to_target for train in self._current_maze_state.trains
+            ],
+        }
         return self._current_maze_state
 
     @override(CoreEnv)
@@ -480,8 +469,6 @@ class FlatlandCoreEnvironment(CoreEnv):
     def clone_from(self, env: FlatlandCoreEnvironment) -> None:
         """Initialise the environment to the given state."""
         assert isinstance(env, FlatlandCoreEnvironment)
-        # or need to handle all the motions checks and events' tracker.
-        assert env.n_trains == self.n_trains, 'Cloning is not possible - mismatching number of trains.'
 
         self.deserialize_state(env.serialize_state())
 
@@ -520,6 +507,7 @@ class FlatlandCoreEnvironment(CoreEnv):
             self._rail_env_rnd_state_for_malfunctions,
             self.rail_env.malfunction_generator._rand_idx,
             self.rail_env.timetable_generator,
+            self.rail_env.temp_transition_data,
             [a.speed_counter.is_cell_entry for a in self.rail_env.agents],  # should be fixed with v > 4.1.0
             self.rail_env.malfunction_generator._cached_rand is not None,
         ]
@@ -540,14 +528,13 @@ class FlatlandCoreEnvironment(CoreEnv):
             self._actions,
             self._random_seed,
             (self.context.step_id, self.context.episode_id),
-            self._include_maze_state_in_serialization,
             self._previous_best_target_distances,
             self.departing_stats,
+            self.n_trains,
         )
         renv_params = self._serialize_rail_env()
         reward_params = self._reward_aggregator.serialize_state()
-        if self._include_maze_state_in_serialization:
-            core_env_param += (self._current_maze_state,)
+        core_env_param += (self._current_maze_state.serialize(),)
 
         return pickle.dumps((core_env_param, renv_params, reward_params))
 
@@ -562,24 +549,16 @@ class FlatlandCoreEnvironment(CoreEnv):
         self._actions = core_env_state[2]
         self._random_seed = core_env_state[3]
         self.context.step_id, self.context._episode_id = core_env_state[4]
-        self._include_maze_state_in_serialization = core_env_state[5]
-        self._previous_best_target_distances = core_env_state[6]
-        self.departing_stats = core_env_state[7]
+        self._previous_best_target_distances = core_env_state[5]
+        self.departing_stats = core_env_state[6]
+        self.n_trains = core_env_state[7]
 
         # end of core env params.
         self._reward_aggregator.deserialize_state(reward_state)
         self._deserialize_rail_env(renv_state)
         _ = get_transitions_map(self.rail_env, self._random_seed)
         # As last step, restore/recompute the maze_state
-        if self._include_maze_state_in_serialization:
-            self._current_maze_state = core_env_state[-1]
-        else:
-            self._current_maze_state = FlatlandMazeState(
-                self._current_train_id,
-                self._last_modifying_actions,
-                self._rail_env,
-            )
-            self._current_maze_state.terminate_episode = self._check_for_termination()
+        self._current_maze_state.deserialize(core_env_state[-1])
 
         self._renderer.reset()
         self._is_cloned = True
@@ -604,6 +583,7 @@ class FlatlandCoreEnvironment(CoreEnv):
         self._rail_env.active_agents = serialised_rail_env[9]
         # deserialize distance map
         self._rail_env.distance_map.agents = self.rail_env.agents
+        self._rail_env.number_of_agents = len(self.rail_env.agents)
         self._rail_env.distance_map.rail = self.rail_env.rail
         self._rail_env.distance_map.distance_map = serialised_rail_env[10]
         self._rail_env.distance_map.agents_previous_computation = serialised_rail_env[11]
@@ -619,6 +599,7 @@ class FlatlandCoreEnvironment(CoreEnv):
             self._rail_env.malfunction_generator._cached_broken = None
         self._rail_env.malfunction_generator._rand_idx = serialised_rail_env[15]
         self.rail_env.timetable_generator = serialised_rail_env[16]
+        self.rail_env.temp_transition_data = serialised_rail_env[17]
         # override cell_entries with correct value.
         for agent, cell_entry in zip(self.rail_env.agents, serialised_rail_env[-2]):
             agent.speed_counter._is_cell_entry = cell_entry
@@ -703,6 +684,19 @@ class FlatlandCoreEnvironment(CoreEnv):
         self._departing_events.departure_in_time(self.departing_stats['in_time'] / self.n_trains)
         self._departing_events.departure_severe_delay(self.departing_stats['delay'] / self.n_trains)
 
+        earliest_depart = np.array([aa.earliest_departure for aa in self.rail_env.agents])
+        mask = self.departing_stats['trains_departed'].astype(bool)
+        depart_norm = (self.departing_stats['trains_depart_time'] - 1 - earliest_depart) / (
+            self.departing_stats['latest_departure'] - earliest_depart
+        )
+
+        for idx, vv in enumerate(depart_norm):
+            if not mask[idx]:
+                continue
+            self._departing_events.departure_norm_hist(value=vv)
+            self._departing_events.departure_normed(value=vv)
+            self._departing_events.departure_normed_by_agent(agent_id=idx, step_key='train_depart', value=vv)
+
     def _update_info_dict_for_mcts(self, done: bool, info: dict) -> None:
         """Updates the info dict returned by the environment to include stats to be logged at node level in mcts.
         :param done: Whether the env is done or not.
@@ -739,15 +733,6 @@ class FlatlandCoreEnvironment(CoreEnv):
         """Return true if the environment was cloned or not."""
         return self._is_cloned
 
-    def _check_for_termination(self) -> bool:
-        """Helper to checks whether the environment can be terminated.
-        :return: Boolean flag indicating whether the environment can be terminated.
-        """
-        for termination_condition in self.termination_conditions:
-            if termination_condition.check_for_termination(self._current_maze_state):
-                return True
-        return False
-
     def record_action(self, action: ActionType):
         """Records the action taken.
         :param action: The action before conversion.
@@ -781,3 +766,34 @@ class FlatlandCoreEnvironment(CoreEnv):
         normalized_delay = max(0, eta - train_state.latest_arrival) / train_state.latest_arrival
 
         self._departing_events.departure_delay(normalized_delay)
+
+    def update_maze_state(self) -> None:
+        """Method used to update the maze state."""
+
+        # update current maze
+        self._current_maze_state.update_maze_state(
+            self._current_train_id,
+            self._last_modifying_actions,
+            self._rail_env,
+        )
+        if self._current_train_id == 0:
+            self._check_for_termination(self._current_maze_state)
+
+    def init_maze_state(self) -> FlatlandMazeState:
+        """Helper that creates the maze state and returns it.
+
+        :return: MazeState.
+        """
+        ms = FlatlandMazeState(self._current_train_id, self._last_modifying_actions, self._rail_env)
+        self._check_for_termination(ms)
+        return ms
+
+    def _check_for_termination(self, maze_state: FlatlandMazeState) -> None:
+        """Check for termination and updates the maze-state accordingly.
+
+        :param maze_state: The current maze state to be checked.
+        """
+        for termination_condition in self.termination_conditions:
+            if termination_condition.check_for_termination(maze_state):
+                maze_state.terminate_episode = True
+                break

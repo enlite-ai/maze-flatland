@@ -58,12 +58,10 @@ class BaseObservationConversion(ObservationConversionInterface, ABC):
         assert len(self._observation_representation) == 0 or maze_state.current_train_id == 0
         # flat step or need to recompute it
         obs_representation = {
-            k: ob.get_many(list(range(maze_state.current_train_id, maze_state.n_trains)))
-            for k, ob in self.observation_builders.items()
+            k: ob.get_many(list(range(maze_state.n_trains))) for k, ob in self.observation_builders.items()
         }
         self._observation_representation = [
-            {k: obs_repr[idx] for k, obs_repr in obs_representation.items()}
-            for idx in range(maze_state.current_train_id, maze_state.n_trains)
+            {k: obs_repr[idx] for k, obs_repr in obs_representation.items()} for idx in range(maze_state.n_trains)
         ]
 
     def pop_observation_representation(self):
