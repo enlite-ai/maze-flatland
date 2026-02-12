@@ -5,7 +5,7 @@ build-backend = 'setuptools.build_meta'
 
 [project]
 name = 'maze_flatland'
-version = '0.1.0'
+version = '0.2.0'
 description = ''
 readme = { file = 'readme.md', content-type = 'text/markdown' }
 authors = [{ name = 'enliteAI GmbH', email = 'office@enlite.ai' }]

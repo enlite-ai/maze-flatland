@@ -119,7 +119,6 @@ class SubStepSkippingWrapper(Wrapper[MazeEnv]):
 
     def __init__(self, env: MazeEnv, do_skipping_in_reset: bool):
         super().__init__(env)
-        assert isinstance(env, FlatlandMaskingWrapper), 'Env needs to be wrapped with FlatlandMaskingWrapper'
         self._step_events = self.core_env.context.event_service.create_event_topic(SkipEvent)
         self.do_skipping_in_reset = do_skipping_in_reset
 
@@ -161,11 +160,12 @@ class SubStepSkippingWrapper(Wrapper[MazeEnv]):
         # all trains have exactly 1 single option to follow
         while skip_step:
             action = self.action_conversion.action_from_masking(observation[f'{self.actor_id().step_key}_mask'])
+            train_id = self._current_train_id  # before step..
             observation, _rew, _done, _info = self.env.step(action)
             rewards.append(_rew)
             # flag that skipping has happened
             skipped = True
-            self._step_events.sub_step(sub_step_is_skipped=True)
+            self._step_events.sub_step(sub_step_is_skipped=True, substep_id=train_id)
             if _done:
                 break
             skip_step = self.check_skipping_conditions_and_get_actions(observation, self.actor_id())
@@ -175,8 +175,9 @@ class SubStepSkippingWrapper(Wrapper[MazeEnv]):
     def step(self, action) -> tuple[Any, Any, bool, dict[Any, Any]]:
         """Intercept ``BaseEnv.step`` and tracks the metrics.
         :param action: The action to take"""
+        train_id = self._current_train_id
         observation, reward, done, info = self.env.step(action)
-        self._step_events.sub_step(sub_step_is_skipped=False)
+        self._step_events.sub_step(sub_step_is_skipped=False, substep_id=train_id)
         if done:
             return observation, reward, done, info
 
@@ -193,4 +194,4 @@ class SubStepSkippingWrapper(Wrapper[MazeEnv]):
     def clone_from(self, env: EnvType) -> None:
         """Overrides the clone_from method.
         :param env: The source env to be cloned."""
-        self.env.clone_from(env.env)
+        self.deserialize_state(env.serialize_state())

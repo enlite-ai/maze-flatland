@@ -20,7 +20,7 @@ from maze_flatland.wrappers.observation_aggregator_wrapper import (
 
 def create_example_env():
     """Create a small example env."""
-    core_env = create_core_env(3, 30, 30, 2, 0, {1: 1}, False, 3, 3)
+    core_env = create_core_env(3, 30, 30, 2, 0, {1: 1}, 3, 3)
     env = FlatlandEnvironment(
         core_env,
         {'train_move': DirectionalAC()},

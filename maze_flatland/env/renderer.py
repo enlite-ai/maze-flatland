@@ -81,6 +81,38 @@ class FlatlandRendererBase(Renderer):
         if self._flatland_renderer:
             self._flatland_renderer.close_window()
 
+    def _render(
+        self,
+        maze_state: FlatlandMazeState,
+        maze_action: None | FlatlandMazeAction | list[FlatlandMazeAction],
+        events: StepEventLog,
+        rail_env: flatland.envs.rail_env.RailEnv,
+        close_prior_windows: bool,
+        override_fsize: None | tuple[int, int] = None,
+    ) -> plt.Figure:
+        """Helper function to create an image and return it.
+
+        :param maze_state: Maze state after application of action.
+        :param maze_action: The optional action to render. Or a list of actions for each train.
+        :param events: StepEventLog instance.
+        :param rail_env: Flatland's RailEnv.
+        :param close_prior_windows: Whether to close prior windows before showing new one.
+        :param override_fsize: If defined, it overrides the standard image size.
+        :return: The rendered image.
+        """
+
+        _ = maze_action, events
+        fig = self._render_base_grid(
+            maze_state,
+            rail_env,
+            self._show_inactive_agents,
+            self._show_selected_agent,
+            True,
+            close_prior_windows,
+            override_fsize,
+        )
+        return fig
+
     @override(Renderer)
     def render(
         self,
@@ -105,22 +137,14 @@ class FlatlandRendererBase(Renderer):
         """
         if maze_state.terminate_episode:
             return
-        _ = maze_action, events
-        _ = self._render_base_grid(
-            maze_state,
-            rail_env,
-            self._show_inactive_agents,
-            self._show_selected_agent,
-            True,
-            close_prior_windows,
-            override_fsize,
-        )
+        fig = self._render(maze_state, maze_action, events, rail_env, close_prior_windows, override_fsize)
 
         if save_in_dir is None:
-            plt.show()
+            fig.show()
         else:
-            plt.savefig(f'{save_in_dir}/render_{maze_state.env_time}-{maze_state.current_train_id}.png')
-            plt.close()
+            fig.savefig(f'{save_in_dir}/render_{maze_state.env_time}-{maze_state.current_train_id}.png')
+
+            plt.close(fig)
 
     # pylint: disable=protected-access
     def _render_base_grid(
@@ -132,7 +156,7 @@ class FlatlandRendererBase(Renderer):
         show_agents: bool,
         close_prior_windows: bool,
         override_fsize: None | tuple[int, int] = None,
-    ) -> np.ndarray:
+    ) -> plt.Figure:
         """Helper method to do the rendering from the flatland environment.
 
         :param maze_state: Maze state after application of action.
@@ -165,11 +189,12 @@ class FlatlandRendererBase(Renderer):
         # Plot grid
         dpi = 100
         fsize = (self._screen_width / dpi, self._screen_height / dpi) if override_fsize is None else override_fsize
-        plt.figure(figsize=fsize, dpi=dpi)
-        plt.imshow(img, aspect='auto', interpolation='nearest')
+        fig, ax = plt.subplots(figsize=fsize, dpi=dpi)
+
+        ax.imshow(img, aspect='auto', interpolation='nearest')
 
         # Show timestamp
-        plt.text(
+        ax.text(
             20,
             40,
             f'{rail_env._elapsed_steps}-{maze_state.current_train_id} / {rail_env._max_episode_steps}',
@@ -179,10 +204,10 @@ class FlatlandRendererBase(Renderer):
 
         if self._show_grid:
             for y in np.arange(0, img.shape[0], img.shape[0] // maze_state.map_size[1]):
-                plt.axhline(y=y, color='red', alpha=0.75)
+                ax.axhline(y=y, color='red', alpha=0.75)
             for x in np.arange(0, img.shape[1], img.shape[0] // maze_state.map_size[0]):
-                plt.axvline(x=x, color='red', alpha=0.75)
+                ax.axvline(x=x, color='red', alpha=0.75)
 
-        plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+        fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
 
-        return img
+        return fig

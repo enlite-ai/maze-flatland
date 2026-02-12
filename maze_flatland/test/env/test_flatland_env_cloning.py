@@ -4,7 +4,6 @@ from __future__ import annotations
 import pickle
 import random
 from copy import deepcopy
-from typing import Optional
 
 from flatland.core.env_observation_builder import DummyObservationBuilder
 from flatland.envs.rail_env import RailEnv
@@ -75,9 +74,7 @@ def compare_backend(rail_env1: RailEnv, rail_env2: RailEnv):
     return diff_keys
 
 
-def init_env_with_malfunctions(
-    malf_rate: float, seed: int = 9999, n_trains: int = 2, include_maze_state_in_serialization: Optional[bool] = False
-) -> FlatlandEnvironment:
+def init_env_with_malfunctions(malf_rate: float, seed: int = 9999, n_trains: int = 2) -> FlatlandEnvironment:
     """Initialize an environment with a certain probability for a train to be subjected to a malfunction."""
     core_env: FlatlandCoreEnvironment = create_core_env(
         n_trains,
@@ -86,7 +83,6 @@ def init_env_with_malfunctions(
         2,
         malf_rate,
         {1.0: 0.7, 1.0 / 2.0: 0.3},
-        include_maze_state_in_serialization=include_maze_state_in_serialization,
     )
     env = FlatlandEnvironment(
         core_env,
@@ -212,30 +208,10 @@ def test_deserialization_of_serialised_state():
     compare_backend(env.rail_env, cloned_env.rail_env)
 
 
-def test_serialization_and_deserialization():
-    """Check the state equivalence of two environments after stepping one and cloning it into another."""
-    e1 = init_env_with_malfunctions(malf_rate=1 / 100, include_maze_state_in_serialization=True)
-    e2 = init_env_with_malfunctions(malf_rate=1 / 100, include_maze_state_in_serialization=False)
-
-    # Check for same maze states
-    assert check_if_equal(e1.get_maze_state(), e2.get_maze_state())
-
-    # Serialize
-    serialized_with_maze_state = e1.serialize_state()
-    serialized_without_maze_state = e2.serialize_state()
-
-    # Deserialize
-    e1.deserialize_state(serialized_with_maze_state)
-    e2.deserialize_state(serialized_without_maze_state)
-
-    # Check for same maze states
-    assert check_if_equal(e1.get_maze_state(), e2.get_maze_state())
-
-
 def test_nested_cloning():
     """Test that serialize(env) is equal to serialize(clone_from(env))."""
-    e1 = init_env_with_malfunctions(malf_rate=1 / 10, include_maze_state_in_serialization=True)
-    e2 = init_env_with_malfunctions(malf_rate=1 / 100, include_maze_state_in_serialization=True, seed=6789)
+    e1 = init_env_with_malfunctions(malf_rate=1 / 10)
+    e2 = init_env_with_malfunctions(malf_rate=1 / 100, seed=6789)
     # step e1 with n actions.
     for _ in range(30):
         action = {'train_move': random.randint(1, 4)}
@@ -245,3 +221,31 @@ def test_nested_cloning():
     serialized_clone = e2.core_env.serialize_state()
     assert check_if_equal(pickle.loads(serialized_clone), pickle.loads(serialized_state_s1))
     assert check_if_equal(e1._rail_env_rnd_state_for_malfunctions, e2._rail_env_rnd_state_for_malfunctions)
+
+
+def test_cloning_different_n_trains():
+    """Test that cloning from an environment with different n_trains is successful."""
+
+    e1 = init_env_with_malfunctions(malf_rate=1 / 10, n_trains=1)
+    e2 = init_env_with_malfunctions(malf_rate=1 / 100, seed=6789, n_trains=2)
+    # step e2 for 5 flat steps
+    for _ in range(10):
+        action = {'train_move': random.randint(1, 4)}
+        _ = e2.step(action)
+    # clone e2 into e1
+    e1.clone_from(e2)
+    # check after cloning
+    ms1 = e1.get_maze_state()
+    ms2 = e2.get_maze_state()
+    assert check_if_equal(ms1, ms2)
+    compare_rail_env(e1, e2)
+    # step both envs with n_actions
+    for _ in range(5):
+        action = {'train_move': random.randint(1, 4)}
+        _ = e1.step(action)
+        _ = e2.step(action)
+
+    ms1 = e1.get_maze_state()
+    ms2 = e2.get_maze_state()
+    assert check_if_equal(ms1, ms2, True)
+    compare_rail_env(e1, e2)

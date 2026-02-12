@@ -37,7 +37,6 @@ def _create_example_env(
         n_cities,
         malfunction_rate,
         speed_table,
-        False,
         max_rails_between_cities,
         max_rail_pairs_in_city,
     )
@@ -194,6 +193,7 @@ def test_decision_point_masking_with_cloning():
         max_rails_between_cities=3,
         max_rail_pairs_in_city=3,
     )
+    env2.reset()
     for _ in range(25):
         action = rng.choice(np.where(obs['train_move_mask'])[0])
         obs, rew, done, info = env1.step({'train_move': action})

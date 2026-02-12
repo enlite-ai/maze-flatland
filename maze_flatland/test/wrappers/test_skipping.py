@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 from maze.core.rollout.rollout_generator import RolloutGenerator
 from maze.core.trajectory_recording.records.trajectory_record import SpacesTrajectoryRecord
@@ -36,9 +38,7 @@ def create_example_env(
     max_rail_pairs_in_city: int,
 ) -> FlatlandEnvironment:
     """Create a small example env wrapped with masking wrapper."""
-    core_env = create_core_env(
-        n_trains, 30, 30, n_cities, 0, {1: 1}, False, max_rails_between_cities, max_rail_pairs_in_city
-    )
+    core_env = create_core_env(n_trains, 30, 30, n_cities, 0, {1: 1}, max_rails_between_cities, max_rail_pairs_in_city)
 
     env = FlatlandEnvironment(
         core_env,
@@ -131,7 +131,6 @@ def run_equivalency_test_for_substep_skipping(n_trains: int, seed: int, skip_on_
     done = False
     # step the skip environment and collect action and rewards trajectories.
     while not done:
-        state: FlatlandMazeState = skip_env.get_maze_state()
         mask = obs['train_move_mask']
         if mask.sum() == 1:
             action = np.where(mask)[0][0]
@@ -151,7 +150,7 @@ def run_equivalency_test_for_substep_skipping(n_trains: int, seed: int, skip_on_
     done = False
     # step the environment without skipping and check the equivalence
     while not done:
-        state: FlatlandMazeState = noskip_env.get_maze_state()
+        state: FlatlandMazeState = copy.deepcopy(noskip_env.get_maze_state())
         mask = obs['train_move_mask']
         if mask.sum() == 1:
             action = np.where(mask)[0][0]

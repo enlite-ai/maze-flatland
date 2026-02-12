@@ -21,7 +21,6 @@ def init_core_env(
     n_cities,
     malfunction_rate,
     speed_ratio_map,
-    include_maze_state_in_serialization=False,
 ) -> FlatlandCoreEnvironment:
     """Initialize an instance of the flatland environment.
     :param map_width: width of the gridmap
@@ -30,7 +29,6 @@ def init_core_env(
     :param n_cities: number of cities to initialise on the rail
     :param malfunction_rate: probability that a train is subjected to a malfunction
     :param speed_ratio_map: list of speeds for the agents
-    :param include_maze_state_in_serialization: whether to serialize the current state
     :return: an instance of the flatland core environment.
     """
     return create_core_env(
@@ -40,7 +38,6 @@ def init_core_env(
         n_cities,
         malfunction_rate,
         speed_ratio_map,
-        include_maze_state_in_serialization,
     )
 
 
@@ -206,7 +203,6 @@ def main_serialization_benchmark_space(n_iterations: int, n_trains: list[int], m
                 3,
                 1 / 100,
                 speed_ratio_map={1: 1},
-                include_maze_state_in_serialization=False,
             )
             maze_env = FlatlandEnvironment(
                 core_env=core_env,
@@ -241,7 +237,6 @@ def main_serialization_benchmark_space(n_iterations: int, n_trains: list[int], m
                 3,
                 1 / 100,
                 speed_ratio_map={1: 1},
-                include_maze_state_in_serialization=True,
             )
             maze_env_ = FlatlandEnvironment(
                 core_env=core_env_,
