@@ -51,10 +51,10 @@ class ShortestPathPredictorBuilder(ObservationBuilder):
         :return: dictionary with actions and the distance to target from the future positions.
         """
         if agent.position:
-            possible_transitions = self.env.rail.get_transitions(*agent.position, agent.direction)
+            possible_transitions = self.env.rail.get_transitions((agent.position, agent.direction))
             agent_pos = agent.position
         else:
-            possible_transitions = self.env.rail.get_transitions(*agent.initial_position, agent.direction)
+            possible_transitions = self.env.rail.get_transitions((agent.initial_position, agent.direction))
             if agent.state == TrainState.WAITING:
                 agent_pos = agent.initial_position
             elif agent.state == TrainState.READY_TO_DEPART:

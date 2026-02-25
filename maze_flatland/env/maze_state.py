@@ -12,8 +12,8 @@ import flatland.core.grid.grid4_utils
 import flatland.envs.agent_utils
 import flatland.envs.observations
 import numpy as np
-from flatland.core.grid.rail_env_grid import RailEnvTransitionsEnum
 from flatland.envs.agent_utils import TrainState
+from flatland.envs.grid.rail_env_grid import RailEnvTransitionsEnum
 from flatland.envs.rail_env import RailEnv
 from maze_flatland.env.maze_action import FlatlandMazeAction
 
@@ -339,7 +339,7 @@ class MazeTrainState:
 
         # tuple of 4 elements: (left, fw, right, reverse direction).
         self.possible_transition = get_switches_agent_oriented(
-            self.direction, rail_env.rail.get_transitions(self.position[0], self.position[1], self.direction)
+            self.direction, rail_env.rail.get_transitions(((self.position[0], self.position[1]), self.direction))
         )
 
         self.actions_state = {

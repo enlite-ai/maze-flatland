@@ -11,10 +11,11 @@ import flatland.envs.predictions
 import flatland.envs.rail_generators
 import numpy as np
 from flatland.core.grid.grid4 import Grid4TransitionsEnum
-from flatland.core.grid.rail_env_grid import RailEnvTransitions
+from flatland.envs.grid.rail_env_grid import RailEnvTransitions
 from flatland.envs.malfunction_generators import NoMalfunctionGen
 from flatland.envs.rail_generators import RailFromGridGen
 from flatland.envs.rail_grid_transition_map import RailGridTransitionMap
+from flatland.envs.rail_trainrun_data_structures import Waypoint
 from flatland.envs.timetable_utils import Line, Timetable
 from flatland.utils.rendertools import AgentRenderVariant
 from maze_flatland.env.core_env import FlatlandCoreEnvironment
@@ -126,12 +127,19 @@ def create_dummy_env_dead_end(n_dead_ends: int) -> FlatlandEnvironment:
         grid_map = create_rail_double_dead_ends()
     else:
         assert False
+    agent_positions = [[(2, 1)]]
+    agent_directions = [[Grid4TransitionsEnum.NORTH]]
+    agent_positions = [[[p] for p in pa] for pa in agent_positions]
+    agent_directions = [[[d] for d in da] for da in agent_directions]
+    agent_waypoints = {
+        i: [[Waypoint(fpa, fda) for fpa, fda in zip(pa, da)] for pa, da in zip(pas, das)] + [[Waypoint(target, None)]]
+        for i, (pas, das, target) in enumerate(zip(agent_positions, agent_directions, [(0, 1)]))
+    }
     line = Line(
-        agent_positions=[[(2, 1)]],
-        agent_directions=[[Grid4TransitionsEnum.NORTH]],
-        agent_targets=[(0, 1)],
+        agent_waypoints,
         agent_speeds=[1],
     )
+
     timetable = Timetable(earliest_departures=[[1]], latest_arrivals=[[30]], max_episode_steps=999)
     height, width = grid_map.height, grid_map.width
     core_env = FlatlandCoreEnvironment(

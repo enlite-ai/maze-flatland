@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Callable
 
 import numpy as np
-from flatland.core.grid.rail_env_grid import RailEnvTransitionsEnum
+from flatland.envs.grid.rail_env_grid import RailEnvTransitionsEnum
 from flatland.envs.timetable_utils import Line, Timetable
 
 elements = {
