@@ -62,9 +62,9 @@ class ShortestPathObservationBuilder(flatland.envs.observations.ObservationBuild
         agent: flatland.envs.agent_utils.EnvAgent = self.env.agents[handle]
 
         if agent.position:
-            possible_transitions = self.env.rail.get_transitions(*agent.position, agent.direction)
+            possible_transitions = self.env.rail.get_transitions((agent.position, agent.direction))
         else:
-            possible_transitions = self.env.rail.get_transitions(*agent.initial_position, agent.direction)
+            possible_transitions = self.env.rail.get_transitions((agent.initial_position, agent.direction))
 
         # Get agent's position.
         if self.env.agents[handle].position:

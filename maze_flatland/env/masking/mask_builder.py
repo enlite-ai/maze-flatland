@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 from flatland.core.grid.grid4_utils import MOVEMENT_ARRAY
-from flatland.core.grid.rail_env_grid import RailEnvTransitionsEnum
+from flatland.envs.grid.rail_env_grid import RailEnvTransitionsEnum
 from flatland.envs.rail_env import RailEnv
 from flatland.envs.step_utils.states import TrainState
 from maze_flatland.env.backend_utils import (

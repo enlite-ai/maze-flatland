@@ -7,8 +7,8 @@ from functools import lru_cache
 import numpy as np
 from flatland.core.grid.grid4 import Grid4Transitions
 from flatland.core.grid.grid4_utils import get_new_position
-from flatland.core.grid.rail_env_grid import RailEnvTransitions
 from flatland.envs.agent_utils import EnvAgent
+from flatland.envs.grid.rail_env_grid import RailEnvTransitions
 from flatland.envs.observations import GlobalObsForRailEnv
 from flatland.envs.rail_env import RailEnv
 from maze.core.env.maze_state import MazeStateType

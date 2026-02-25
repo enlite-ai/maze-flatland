@@ -295,7 +295,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         )
         graph_observation = Vertex(depth=0, node=root_node_observation, edges=[])
 
-        possible_transitions = self.env.rail.get_transitions(*agent_virtual_position, agent.direction)
+        possible_transitions = self.env.rail.get_transitions((agent_virtual_position, agent.direction))
 
         # track visited cells.
         visited = OrderedSet()
@@ -329,7 +329,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         """
         return int(transition_bit, 2) == int('1000010000100001', 2)
 
-    # pylint: disable=too-many-nested-blocks
+    # pylint: disable=too-many-nested-blocks, too-many-branches, too-many-statements
     def _explore_tree_direction(  # noqa: max-complexity: 36
         self,
         agent: flatland.EnvAgent,
@@ -392,8 +392,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
                 idx_trains_encountered_deadlocked.append(self.location_has_agent_deadlocked.get(projected_position))
             if self.location_has_agent.get(projected_position, 0) == 1:
                 # this is based on the current agent. without relying on the prediction of the agent moving..
-                if tot_dist < other_agent_encountered:
-                    other_agent_encountered = tot_dist
+                other_agent_encountered = min(other_agent_encountered, tot_dist)
 
                 # Check if any of the observed agents is malfunctioning, store agent with longest duration left
                 if self.location_has_agent_malfunction[projected_position] > malfunctioning_agent:
@@ -409,8 +408,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
 
                     # Check fractional speed of agents
                     current_fractional_speed = self.location_has_agent_speed[projected_position]
-                    if current_fractional_speed < min_fractional_speed:
-                        min_fractional_speed = current_fractional_speed
+                    min_fractional_speed = min(min_fractional_speed, current_fractional_speed)
 
                 else:
                     # If no agent in the same direction was found all agents in that position are other direction
@@ -418,7 +416,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
                     other_agent_opposite_direction += self.location_has_agent[projected_position]
 
                 # Check number of possible transitions for agent and total number of transitions in cell (type)
-            cell_transitions = self.env.rail.get_transitions(*projected_position, projected_direction)
+            cell_transitions = self.env.rail.get_transitions((projected_position, projected_direction))
             transition_bit = bin(self.env.rail.get_full_transitions(*projected_position))
             total_transitions = transition_bit.count('1')
             crossing_found = self._identify_crossing(transition_bit)
@@ -459,11 +457,10 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
                             break  # we can stop the conflict search.
 
             if projected_position in self.location_has_target and projected_position != agent.target:
-                if tot_dist < other_target_encountered:
-                    other_target_encountered = tot_dist
+                other_target_encountered = min(other_target_encountered, tot_dist)
 
-            if projected_position == agent.target and tot_dist < own_target_encountered:
-                own_target_encountered = tot_dist
+            if projected_position == agent.target:
+                other_target_encountered = min(other_target_encountered, tot_dist)
 
             if (projected_position[0], projected_position[1], projected_direction) in visited:
                 last_cell_type = CellType.TERMINAL
@@ -619,7 +616,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         if last_cell_type == CellType.OUT_OF_MAP:
             possible_transitions = (0, 0, 0, 0)  # no transition possible.
         else:
-            possible_transitions = self.env.rail.get_transitions(*position, direction)
+            possible_transitions = self.env.rail.get_transitions((position, direction))
 
         # remove last node enqueued and create new vertex
         _node_expanded, _direction_expanded = self._nodes_expanding.pop()
@@ -631,7 +628,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         for i, branch_direction in enumerate(branch_directions):
             _direction = self.tree_explored_actions_char[i]
             if last_cell_type == CellType.DEAD_END and self.env.rail.get_transition(
-                (*position, direction), (branch_direction + 2) % 4
+                (position, direction), (branch_direction + 2) % 4
             ):
                 # Swap forward and back in case of dead-end, so that an agent can learn that going forward takes
                 # it back
@@ -857,7 +854,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         :param train_handle: Handle of the train for the estimation.
         :return: Tuple with boolean flag and expected delay.
         """
-        possible_transitions = self.env.rail.get_transitions(*cell, direction)
+        possible_transitions = self.env.rail.get_transitions((cell, direction))
         agent = self.env.agents[train_handle]
         if sum(possible_transitions) > 1:
             time_left = self.env._max_episode_steps - self.env._elapsed_steps
@@ -893,7 +890,7 @@ class TreeSwitchObsRailEnv(ObservationBuilder):
         :return: Tuple with boolean flag and expected delay.
         """
         agent = self.env.agents[train_handle]
-        possible_transitions = list(self.env.rail.get_transitions(*cell, direction))
+        possible_transitions = list(self.env.rail.get_transitions((cell, direction)))
         # get the complementary of the direction given that the other agent is following that direction
         complementary_dir = (direction_incoming_agent + 2) % 4
         # set the complementary direction as not usable.
