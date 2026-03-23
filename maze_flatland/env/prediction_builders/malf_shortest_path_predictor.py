@@ -332,6 +332,7 @@ class MalfShortestPathPredictorForRailEnv(PredictionBuilder):
         """
         idx_pos = -1
         # retrieve persistent prediction_list from the env.
+        self.cast_dev_pred_dict_if_needed()
         prediction_list = self.env.dev_pred_dict.get(agent_handle, [])
         reusable_prediction = []
         # get pos of the agent
@@ -349,6 +350,18 @@ class MalfShortestPathPredictorForRailEnv(PredictionBuilder):
                 reusable_prediction = prediction_list[idx_pos:]
                 break
         return idx_pos, last_pos, last_direction, reusable_prediction
+
+    def cast_dev_pred_dict_if_needed(self) -> None:
+        """Cast the dev pred dict to waypoint if needed."""
+        new_agent_pred_dict = {}
+        for agent_id, agent_pred_list in self.env.dev_pred_dict.items():
+            if any(isinstance(tt, tuple) for tt in agent_pred_list):
+                new_agent_pred_dict[agent_id] = [
+                    Waypoint(position=(way[0], way[1]), direction=way[2]) for way in agent_pred_list
+                ]
+            else:
+                new_agent_pred_dict[agent_id] = agent_pred_list
+        self.env.dev_pred_dict = new_agent_pred_dict
 
     def get_persistent_shortest_path(self, agent_handle: int) -> dict[int, Optional[list[Waypoint]]]:
         """Method used to update and store in memory the prediction for the shortest path.
