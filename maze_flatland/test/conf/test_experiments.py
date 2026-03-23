@@ -6,6 +6,7 @@ import os
 
 import maze_flatland.conf as conf_module
 from hydra import compose, initialize_config_module
+from hydra.core.hydra_config import HydraConfig
 from maze.core.agent.policy import Policy
 from maze.core.utils.config_utils import EnvFactory
 from maze.core.utils.factory import Factory
@@ -13,7 +14,7 @@ from maze.maze_cli import maze_run
 from maze.perception.models.model_composer import BaseModelComposer
 from maze.runner import Runner
 from maze_flatland.env.maze_env import FlatlandEnvironment
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 from torch import nn
 
 module_path_single_train = conf_module.__path__[0] + '/experiment/single_train/'
@@ -28,7 +29,15 @@ def read_hydra_config_with_overrides(config_module: str, config_name: str, overr
     :return: Hydra DictConfig instance, assembled according to the given module, name, and overrides.
     """
     with initialize_config_module(config_module):
-        cfg = compose(config_name, overrides=overrides)
+        cfg = compose(config_name, overrides=overrides, return_hydra_config=True)
+
+        # Init the HydraConfig: This is when Hydra actually creates the output dir and changes into it
+        # (otherwise we only have the config object, but not the full run environment)
+        HydraConfig.instance().set_config(cfg)
+
+        # Remove the hydra key from the config before passing it to maze_run, since maze_run expects a plain config
+        with open_dict(cfg):
+            del cfg['hydra']
 
     return cfg
 
